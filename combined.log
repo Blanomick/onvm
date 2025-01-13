@@ -1,0 +1,50 @@
+{"level":"info","message":"Serveur démarré sur le port 5000","timestamp":"2024-10-02T00:23:11.523Z"}
+{"level":"info","message":"Serveur démarré sur le port 5000","timestamp":"2024-10-02T00:31:28.901Z"}
+{"level":"info","message":"POST /api/register","timestamp":"2024-10-02T00:46:40.295Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T00:46:51.503Z"}
+{"level":"info","message":"Serveur démarré sur le port 5000","timestamp":"2024-10-02T02:02:59.206Z"}
+{"level":"info","message":"POST /api/follow","timestamp":"2024-10-02T02:28:02.849Z"}
+{"level":"info","message":"POST /api/follow","timestamp":"2024-10-02T02:29:18.722Z"}
+{"level":"info","message":"POST /api/follow","timestamp":"2024-10-02T02:43:30.907Z"}
+{"level":"info","message":"POST /api/follow","timestamp":"2024-10-02T02:43:32.064Z"}
+{"level":"info","message":"POST /api/follow","timestamp":"2024-10-02T03:08:20.540Z"}
+{"level":"info","message":"POST /api/follow","timestamp":"2024-10-02T03:21:48.080Z"}
+{"level":"info","message":"Serveur démarré sur le port 5000","timestamp":"2024-10-02T04:23:05.120Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T04:24:38.148Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T05:05:16.071Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T05:05:22.781Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T05:08:18.139Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T05:10:54.820Z"}
+{"level":"info","message":"POST /api/register","timestamp":"2024-10-02T05:11:36.562Z"}
+{"level":"info","message":"POST /api/register","timestamp":"2024-10-02T05:12:42.520Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T05:12:57.084Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T05:18:05.582Z"}
+{"level":"info","message":"GET /api/profile/2/following","timestamp":"2024-10-02T05:18:07.622Z"}
+{"level":"info","message":"GET /api/user/2/publications","timestamp":"2024-10-02T05:18:07.636Z"}
+{"level":"info","message":"GET /api/profile/2/following","timestamp":"2024-10-02T05:18:07.683Z"}
+{"level":"info","message":"GET /api/user/2/publications","timestamp":"2024-10-02T05:18:07.692Z"}
+{"level":"info","message":"GET /api/profile/2/following","timestamp":"2024-10-02T05:18:17.006Z"}
+{"level":"info","message":"GET /api/user/2/publications","timestamp":"2024-10-02T05:18:17.031Z"}
+{"level":"info","message":"GET /api/profile/2/following","timestamp":"2024-10-02T05:18:17.099Z"}
+{"level":"info","message":"GET /api/user/2/publications","timestamp":"2024-10-02T05:18:17.103Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T05:34:27.052Z"}
+{"level":"info","message":"GET /api/user/2/publications","timestamp":"2024-10-02T05:34:28.820Z"}
+{"level":"info","message":"GET /api/profile/2/following","timestamp":"2024-10-02T05:34:28.832Z"}
+{"level":"info","message":"GET /api/user/2/publications","timestamp":"2024-10-02T05:34:28.843Z"}
+{"level":"info","message":"GET /api/profile/2/following","timestamp":"2024-10-02T05:34:28.851Z"}
+{"level":"info","message":"GET /api/profile/2/following","timestamp":"2024-10-02T05:34:54.200Z"}
+{"level":"info","message":"GET /api/user/2/publications","timestamp":"2024-10-02T05:34:54.208Z"}
+{"level":"info","message":"GET /api/profile/2/following","timestamp":"2024-10-02T05:34:54.218Z"}
+{"level":"info","message":"GET /api/user/2/publications","timestamp":"2024-10-02T05:34:54.226Z"}
+{"level":"info","message":"GET /api/profile/2/following","timestamp":"2024-10-02T11:17:28.758Z"}
+{"level":"info","message":"GET /api/user/2/publications","timestamp":"2024-10-02T11:17:28.772Z"}
+{"level":"info","message":"GET /api/profile/2/following","timestamp":"2024-10-02T11:17:28.782Z"}
+{"level":"info","message":"GET /api/user/2/publications","timestamp":"2024-10-02T11:17:28.789Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T11:22:00.505Z"}
+{"level":"info","message":"Serveur démarré sur le port 5000","timestamp":"2024-10-02T13:36:06.758Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T13:37:09.122Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T13:37:27.161Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T13:49:22.245Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T13:51:08.290Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T14:02:08.996Z"}
+{"level":"info","message":"POST /api/login","timestamp":"2024-10-02T14:02:12.701Z"}
