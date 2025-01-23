@@ -1,4 +1,4 @@
-require('dotenv').config(); // Charger les variables d'environnement depuis .env
+
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
@@ -6,7 +6,16 @@ const jwt = require('jsonwebtoken');
 const db = require('../db'); // Connexion à la base de données SQLite
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'onvm_secret_key';
+
+
+
+
+
+// Gestion des erreurs globales pour la base de données
+db.on('error', (err) => {
+  console.error(`[ERREUR] Connexion à la base de données : ${err.message}`);
+});
+SECRET = process.env.JWT_SECRET || 'onvm_secret_key';
 
 
 // Créer un jeton JWT
