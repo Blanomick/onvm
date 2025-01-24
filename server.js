@@ -50,19 +50,18 @@ if (!JWT_SECRET) {
 const db = knex({
   client: 'pg',
   connection: {
-    connectionString: DATABASE_URL, // Utilise l'URL définie dans le fichier
-    ssl: { rejectUnauthorized: false }, // Nécessaire pour Render avec SSL
+    connectionString: DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
   },
   pool: {
-    min: 0, // Minimum de connexions (0 pour libérer les connexions inutilisées)
-    max: 5, // Maximum de connexions simultanées
-    acquireTimeoutMillis: 60000, // Temps maximum pour attendre une connexion (60 secondes)
-    idleTimeoutMillis: 30000, // Temps avant qu'une connexion inactive soit fermée
-    reapIntervalMillis: 1000, // Vérifie les connexions inactives toutes les secondes
-    createRetryIntervalMillis: 100, // Réessaye de créer une connexion toutes les 100ms si le pool est saturé
+    min: 0, // Pas de connexion maintenue inutilement
+    max: 3, // Maximum de connexions limité à 3 (pour éviter de saturer PostgreSQL)
+    acquireTimeoutMillis: 30000, // Temps maximum pour attendre une connexion (30 secondes)
+    idleTimeoutMillis: 15000, // Connexions inactives fermées après 15 secondes
+    reapIntervalMillis: 1000, // Vérification des connexions inactives toutes les secondes
   },
-  
 });
+
 
   
 
