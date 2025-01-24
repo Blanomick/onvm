@@ -23,14 +23,13 @@
     "pg": "^8.13.1",
     "socket.io": "^4.8.1"
   },
-  "devDependencies": {
-    "nodemon": "^3.1.9" 
-  },
   "engines": {
     "node": ">=18.0.0"
   },
   "eslintConfig": {
-    "extends": ["eslint:recommended"],
+    "extends": [
+      "eslint:recommended"
+    ],
     "env": {
       "node": true,
       "es2021": true
@@ -45,5 +44,11 @@
   },
   "author": "Olivia Mambo",
   "license": "ISC",
-  "keywords": ["backend", "nodejs", "express", "postgresql", "socket.io"]
+  "keywords": [
+    "backend",
+    "nodejs",
+    "express",
+    "postgresql",
+    "socket.io"
+  ]
 }
