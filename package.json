@@ -1,11 +1,17 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "private": true,
-  "description": "Backend for ONVM project",
+  "description": "Backend pour le projet ONVM utilisant Node.js, Express et PostgreSQL",
   "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "build": "npm install",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
   "dependencies": {
-    "axios": "^1.0.0",
+    "axios": "^1.7.9",
     "bcrypt": "^5.1.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
@@ -18,16 +24,26 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
-  },
-  "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "build": "npm install",
-    "test": "echo \"No tests specified\" && exit 0"
+    "nodemon": "^3.1.9" 
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   },
-  "license": "MIT"
+  "eslintConfig": {
+    "extends": ["eslint:recommended"],
+    "env": {
+      "node": true,
+      "es2021": true
+    },
+    "parserOptions": {
+      "ecmaVersion": 12
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Blanomick/onvm.git"
+  },
+  "author": "Olivia Mambo",
+  "license": "ISC",
+  "keywords": ["backend", "nodejs", "express", "postgresql", "socket.io"]
 }
