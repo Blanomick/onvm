@@ -1,7 +1,7 @@
 
 
 const express = require('express');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../db'); // Connexion à la base de données SQLite
 const router = express.Router();

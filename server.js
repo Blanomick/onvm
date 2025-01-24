@@ -54,11 +54,11 @@ const db = knex({
     ssl: { rejectUnauthorized: false },
   },
   pool: {
-    min: 0, // Pas de connexion maintenue inutilement
-    max: 3, // Maximum de connexions limité à 3 (pour éviter de saturer PostgreSQL)
-    acquireTimeoutMillis: 30000, // Temps maximum pour attendre une connexion (30 secondes)
-    idleTimeoutMillis: 15000, // Connexions inactives fermées après 15 secondes
-    reapIntervalMillis: 1000, // Vérification des connexions inactives toutes les secondes
+    min: 0, // Garde 0 connexion active pour libérer des ressources inutilisées.
+    max: 5, // Limite le nombre de connexions à 5 pour éviter une surcharge.
+    acquireTimeoutMillis: 60000, // Temps maximum pour acquérir une connexion.
+    idleTimeoutMillis: 30000, // Ferme les connexions inactives après 30 secondes.
+    reapIntervalMillis: 1000, // Vérifie les connexions inactives toutes les secondes.
   },
 });
 
