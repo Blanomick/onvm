@@ -26,27 +26,28 @@ const liveSessions = {};
 const app = express();
 
 // Définir directement les variables importantes dans le fichier
-const DATABASE_URL = "postgresql://onvmdb_user:s8BEoy1je9KdtAG4eAuliUkyw3UCdhuU@dpg-cu3qdkhu0jms73dnpo10-a.oregon-postgres.render.com/onvmdb";
+const DATABASE_URL = "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
 const JWT_SECRET = "wgzfjViViKh1FxKH03Nx13qQO45Oenq89FZ8QB/WqTo";
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 // Afficher les valeurs des variables pour vérifier leur chargement
-console.log('DATABASE_URL:', DATABASE_URL);
-console.log('JWT_SECRET:', JWT_SECRET);
-console.log('PORT:', PORT);
-// Suppression de la vérification de .env car l'URL est directement définie
+console.log(`[INFO] DATABASE_URL : ${DATABASE_URL}`);
+console.log(`[INFO] JWT_SECRET : ${JWT_SECRET}`);
+console.log(`[INFO] PORT : ${PORT}`);
 console.log('[INFO] Utilisation de l\'URL de base de données codée en dur.');
+
+// Vérifications des variables critiques
 if (!DATABASE_URL) {
   console.error('[ERREUR] L\'URL de la base de données n\'est pas définie.');
-  process.exit(1);
+  process.exit(1); // Arrête le processus si l'URL est manquante
 }
 
 if (!JWT_SECRET) {
   console.error('[ERREUR] Le secret JWT n\'est pas défini.');
-  process.exit(1);
+  process.exit(1); // Arrête le processus si le secret JWT est manquant
 }
 
-
+// Configuration de Knex avec la base de données PostgreSQL
 const db = knex({
   client: 'pg',
   connection: {
@@ -54,19 +55,13 @@ const db = knex({
     ssl: { rejectUnauthorized: false },
   },
   pool: {
-    min: 0, // Garde 0 connexion active pour libérer des ressources inutilisées.
-    max: 5, // Limite le nombre de connexions à 5 pour éviter une surcharge.
-    acquireTimeoutMillis: 60000, // Temps maximum pour acquérir une connexion.
-    idleTimeoutMillis: 30000, // Ferme les connexions inactives après 30 secondes.
-    reapIntervalMillis: 1000, // Vérifie les connexions inactives toutes les secondes.
+    min: 0,
+    max: 10, // Augmentez si nécessaire
+    acquireTimeoutMillis: 60000, // Temps pour établir une connexion
+    idleTimeoutMillis: 60000, // Temps avant de fermer une connexion inactive
+    reapIntervalMillis: 2000, // Vérifie les connexions toutes les 2 secondes
   },
 });
-
-
-  
-
-
-
 
 // Fonction pour tester la connexion à la base de données
 const testDatabaseConnection = async () => {
@@ -147,6 +142,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   },
 }));
 
+
 // Routes principales
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/publications', require('./routes/publications'));
@@ -158,6 +154,15 @@ app.use('/api/communities', require('./routes/communities'));
 app.use('/api/search', require('./routes/search'));
 app.use('/api/wallet', require('./routes/wallet'));
 app.use('/api/live', require('./routes/live')(io));
+
+
+
+
+
+// Route pour la racine du backend
+app.get('/', (req, res) => {
+  res.status(200).json({ message: 'Bienvenue sur ONVM Backend!' });
+});
 
 // Route de test
 app.get('/api/test', (req, res) => {
