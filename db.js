@@ -1,50 +1,50 @@
 const knex = require('knex');
 
-// Détection de l'environnement et URL de connexion à la base de données
-const connectionString = "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
 
-// Vérification de la disponibilité de l'URL de connexion
+
+// URL de connexion PostgreSQL
+const connectionString =
+  "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
+
+// Vérification si l'URL de connexion est définie
 if (!connectionString) {
   console.error('[ERREUR CRITIQUE] L\'URL de connexion à la base de données n\'est pas définie.');
-  process.exit(1); // Arrête le processus si l'URL est manquante
+  process.exit(1); // Arrête l'application si l'URL est manquante
 }
 
-console.log('[INFO] Tentative de connexion à la base de données PostgreSQL sur Render...');
+console.log('[INFO] Tentative de connexion à la base de données PostgreSQL...');
 
-// Configuration de Knex pour PostgreSQL
+// Configuration de Knex avec PostgreSQL
 const db = knex({
   client: 'pg',
   connection: {
     connectionString: connectionString, // URL de connexion correcte
-    ssl: { rejectUnauthorized: false }, // Active SSL pour les connexions sécurisées (Render)
+    ssl: { rejectUnauthorized: false }, // Active SSL pour Render
   },
   pool: {
-    min: 2, // Minimum de connexions dans le pool (réduit pour économiser les ressources)
-    max: 10, // Maximum de connexions simultanées pour éviter une surcharge
-    acquireTimeoutMillis: 30000, // Timeout pour acquérir une connexion (30 secondes)
-    idleTimeoutMillis: 30000, // Ferme les connexions inactives après 30 secondes
+    min: 2, // Minimum de connexions dans le pool
+    max: 10, // Maximum de connexions simultanées
+    acquireTimeoutMillis: 30000, // Timeout pour acquérir une connexion
+    idleTimeoutMillis: 30000, // Ferme les connexions inactives après 30s
     reapIntervalMillis: 1000, // Vérifie les connexions inactives toutes les secondes
   },
 });
-
-
-
-
-
 
 // Vérification de la connexion à la base de données
 (async () => {
   try {
     console.log('[INFO] Test de connexion à la base de données PostgreSQL...');
-    await db.raw('SELECT 1'); // Vérifie la connexion
+    await db.raw('SELECT 1'); // Vérifie si la connexion est valide
     console.log('[INFO] Connexion réussie à la base de données PostgreSQL.');
   } catch (error) {
     console.error('[ERREUR CRITIQUE] Échec de connexion à la base de données PostgreSQL.');
     console.error(`[DÉTAILS] ${error.message}`);
     console.error('[ACTIONS] Vérifiez que l\'URL de connexion est correcte et que la base de données est accessible.');
-    process.exit(1); // Arrête le processus si la connexion échoue
+    process.exit(1); // Arrête l'application si la connexion échoue
   }
 })();
+
+
 
 
 

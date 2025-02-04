@@ -1,23 +1,28 @@
 const knex = require('knex');
 
-const DATABASE_URL = "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://onvmdb_user:s8BEoy1je9KdtAG4eAuliUkyw3UCdhuU@dpg-cu3qdkhu0jms73dnpo10-a.oregon-postgres.render.com/onvmdb';
 
 const db = knex({
   client: 'pg',
   connection: {
     connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false }, // Assurez-vous que l'option SSL est bien activée
+    ssl: {
+      require: true,
+      rejectUnauthorized: false,
+    },
   },
 });
 
-(async () => {
+const testDatabaseConnection = async () => {
   try {
-    console.log('[INFO] Tentative de connexion à la base de données PostgreSQL...');
+    console.log('[INFO] Test de connexion...');
     await db.raw('SELECT 1');
-    console.log('[INFO] Connexion réussie !');
-  } catch (err) {
-    console.error('[ERREUR] Connexion échouée :', err.message);
+    console.log('[INFO] Connexion réussie à la base de données PostgreSQL.');
+  } catch (error) {
+    console.error('[ERREUR] Échec de connexion à la base de données :', error.message);
   } finally {
     process.exit();
   }
-})();
+};
+
+testDatabaseConnection();
