@@ -36,7 +36,7 @@ const DATABASE_URL = isLocal
   : "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
 
 const JWT_SECRET = "wgzfjViViKh1FxKH03Nx13qQO45Oenq89FZ8QB/WqTo";
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8000;
 
 // Afficher les valeurs des variables pour vérifier leur chargement
 console.log(`[INFO] DATABASE_URL : ${DATABASE_URL}`);
