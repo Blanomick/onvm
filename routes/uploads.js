@@ -9,21 +9,21 @@ const stream = require('stream');
 
 // Configuration OAuth2 pour Google Drive
 const oauth2Client = new google.auth.OAuth2(
-  '145124593961-0ll13lmqjrof4hl0if4op7bujnl075qv.apps.googleusercontent.com',  // Client ID
-  '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',  // Client Secret
-  'https://onvm.onrender.com/oauth2callback'  // URI de redirection
+  process.env.GOOGLE_CLIENT_ID,  // Client ID sécurisé
+  process.env.GOOGLE_CLIENT_SECRET,  // Client Secret sécurisé
+  process.env.GOOGLE_REDIRECT_URI  // URI de redirection
 );
 
 // Rafraîchir le token d'accès
 oauth2Client.setCredentials({
-  refresh_token: '1//04gyUL1svcd7oCgYIARAAGAQSNwF-L9Irkw8ROGR8d94RZTe2fET649u3c-WKF7GSc8mrC7GkfQ0vygwu7S55NuipM6PLFNXfoCk'
+  refresh_token: process.env.GOOGLE_REFRESH_TOKEN
 });
 
 // API Google Drive
 const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
 // ID du dossier Google Drive pour le stockage
-const driveFolderId = '1GLcY3wDMVOLIER9WtEmnmPUn8Zw11VJt';
+const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
 // Fonction pour uploader vers Google Drive
 const uploadToDrive = async (file, folderId) => {
@@ -61,7 +61,7 @@ if (!fs.existsSync(uploadDir)) {
   console.log(`[LOG] Dossier "uploads" existe déjà à ${uploadDir}`);
 }
 
-// Configuration de Multer pour le stockage local des fichiers
+// Configuration de Multer pour le stockage des fichiers (local ou Google Drive)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     console.log(`[LOG] Destination de stockage : ${uploadDir}`);
@@ -75,12 +75,23 @@ const storage = multer.diskStorage({
   },
 });
 
+// Vérification du type de fichier
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = ['image/jpeg', 'image/png', 'video/mp4', 'audio/mpeg'];
+  if (!allowedTypes.includes(file.mimetype)) {
+    console.error('[ERREUR] Type de fichier non autorisé :', file.mimetype);
+    return cb(new Error('Type de fichier non autorisé.'), false);
+  }
+  cb(null, true);
+};
+
 const upload = multer({
   storage,
+  fileFilter,
   limits: { fileSize: 300 * 1024 * 1024 }, // Limite de taille à 300 Mo
 });
 
-// Route POST pour l'upload général
+// **🔹 Route POST pour l'upload général**
 router.post('/', upload.single('media'), async (req, res) => {
   console.log(`[LOG] Requête reçue pour l'upload de fichier générique`);
   if (!req.file) {
@@ -99,7 +110,7 @@ router.post('/', upload.single('media'), async (req, res) => {
   }
 });
 
-// Route PUT pour mettre à jour la photo de profil utilisateur
+// **🔹 Route PUT pour mettre à jour la photo de profil utilisateur**
 router.put('/users/:id/profile-picture', upload.single('profilePicture'), async (req, res) => {
   console.log(`[LOG] Requête reçue pour mise à jour de photo de profil utilisateur, ID : ${req.params.id}`);
   if (!req.file) {
@@ -121,7 +132,7 @@ router.put('/users/:id/profile-picture', upload.single('profilePicture'), async 
   }
 });
 
-// Route POST pour l'upload de photo de communauté
+// **🔹 Route POST pour l'upload de photo de communauté**
 router.post('/communities/:id/upload', upload.single('profilePhoto'), async (req, res) => {
   const communityId = req.params.id;
   console.log(`[LOG] Upload pour la communauté ID : ${communityId}`);
@@ -142,5 +153,35 @@ router.post('/communities/:id/upload', upload.single('profilePhoto'), async (req
     res.status(500).json({ message: 'Erreur lors de l\'upload vers Google Drive.' });
   }
 });
+
+// **🔹 Suppression automatique des fichiers locaux inutilisés**
+setInterval(() => {
+  console.log('[LOG] Nettoyage automatique des fichiers temporaires dans "uploads"...');
+  fs.readdir(uploadDir, (err, files) => {
+    if (err) {
+      console.error('[ERREUR] Impossible de lire le répertoire "uploads":', err);
+      return;
+    }
+
+    files.forEach(file => {
+      const filePath = path.join(uploadDir, file);
+      fs.stat(filePath, (err, stats) => {
+        if (err) {
+          console.error('[ERREUR] Impossible de récupérer les informations du fichier:', err);
+          return;
+        }
+
+        const now = new Date().getTime();
+        const fileAge = now - stats.mtimeMs;
+
+        if (fileAge > 24 * 60 * 60 * 1000) { // Supprimer les fichiers de plus de 24h
+          fs.unlink(filePath, err => {
+            if (!err) console.log(`[LOG] Fichier supprimé: ${filePath}`);
+          });
+        }
+      });
+    });
+  });
+}, 6 * 60 * 60 * 1000); // Nettoyage toutes les 6 heures
 
 module.exports = router;

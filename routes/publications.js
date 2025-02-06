@@ -23,7 +23,23 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}_${safeFileName}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 300 * 1024 * 1024 } });
+
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = ['image/jpeg', 'image/png', 'video/mp4', 'audio/mpeg'];
+  if (!allowedTypes.includes(file.mimetype)) {
+    return cb(new Error('Type de fichier non autorisé'), false);
+  }
+  cb(null, true);
+};
+
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 300 * 1024 * 1024 }
+});
+
+
+
 
 // Création de publication
 router.post('/', upload.single('media'), (req, res) => {
@@ -56,6 +72,8 @@ router.get('/', (req, res) => {
     LEFT JOIN retweets ON publications.id = retweets.publicationId
     GROUP BY publications.id
     ORDER BY publications.created_at DESC
+LIMIT ? OFFSET ?
+
   `;
 
   db.all(query, [], async (err, publications) => {
@@ -90,6 +108,11 @@ function getCommentsForPublication(publicationId) {
         console.error('[ERREUR] Erreur lors de la récupération des commentaires:', err);
         reject(err);
       } else {
+        
+        Promise.all(rows.map(async (comment) => {
+          comment.replies = await getRepliesForComment(comment.id);
+        }));
+        
         resolve(rows);
       }
     });
@@ -248,7 +271,30 @@ router.delete('/:publicationId', (req, res) => {
 
   console.log('[BACKEND] Requête de suppression reçue pour publicationId :', publicationId);
 
-  const deleteQuery = 'DELETE FROM publications WHERE id = ?';
+  const { userId } = req.body; // Récupère l'ID de l'utilisateur qui tente la suppression
+
+if (!userId) {
+  return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
+}
+
+const deleteQuery = 'DELETE FROM publications WHERE id = ? AND userId = ?';
+db.run(deleteQuery, [publicationId, userId], function (err) {
+  if (err) {
+    console.error('[ERREUR] Erreur lors de la suppression de la publication :', err);
+    return res.status(500).json({ message: 'Erreur lors de la suppression de la publication.' });
+  }
+
+  if (this.changes === 0) {
+    console.warn('[INFO] Suppression refusée, l\'utilisateur n\'est pas l\'auteur.');
+    return res.status(403).json({ message: 'Vous n\'êtes pas autorisé à supprimer cette publication.' });
+  }
+
+  console.log('[SUCCÈS] Publication supprimée avec succès, id :', publicationId);
+  res.status(200).json({ message: 'Publication supprimée avec succès.' });
+});
+
+
+
   db.run(deleteQuery, [publicationId], function (err) {
     if (err) {
       console.error('[ERREUR] Erreur lors de la suppression de la publication :', err);

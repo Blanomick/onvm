@@ -1,7 +1,7 @@
 
 
 const express = require('express');
-const bcrypt = require('bcrypt');
+const bcryptjs = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../db'); // Connexion à la base de données SQLite
 const router = express.Router();
@@ -15,7 +15,9 @@ const router = express.Router();
 db.on('error', (err) => {
   console.error(`[ERREUR] Connexion à la base de données : ${err.message}`);
 });
-SECRET = process.env.JWT_SECRET || 'onvm_secret_key';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'onvm_secret_key';
+
 
 
 // Créer un jeton JWT

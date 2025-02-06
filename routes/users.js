@@ -1,4 +1,4 @@
-const express = require('express');
+
 const db = require('../db'); // Connexion à la base de données SQLite
 const multer = require('multer'); // Import de Multer pour la gestion des fichiers
 const path = require('path');
@@ -274,45 +274,42 @@ router.get('/:id/retweets', (req, res) => {
 });
 
 // Route DELETE pour supprimer un retweet par publicationId et userId
-router.delete('/retweets/:publicationId/:userId', async (req, res) => {
+router.delete('/retweets/:publicationId/:userId', (req, res) => {
   const { publicationId, userId } = req.params;
 
-  try {
-    const result = await db.run(
-      'DELETE FROM retweets WHERE publicationId = ? AND userId = ?',
-      [publicationId, userId]
-    );
-
-    if (result.changes > 0) {
-      res.status(200).json({ message: 'Retweet supprimé avec succès.' });
-    } else {
-      res.status(404).json({ error: 'Retweet introuvable.' });
+  const deleteQuery = 'DELETE FROM retweets WHERE publicationId = ? AND userId = ?';
+  db.run(deleteQuery, [publicationId, userId], function (err) {
+    if (err) {
+      console.error('Erreur lors de la suppression du retweet:', err);
+      return res.status(500).json({ error: 'Erreur interne du serveur.' });
     }
-  } catch (error) {
-    console.error('Erreur lors de la suppression du retweet:', error);
-    res.status(500).json({ error: 'Erreur interne du serveur.' });
-  }
+    if (this.changes === 0) {
+      return res.status(404).json({ error: 'Retweet introuvable.' });
+    }
+    res.status(200).json({ message: 'Retweet supprimé avec succès.' });
+  });
 });
 
 
-
-// Route GET pour vérifier si un utilisateur suit un autre utilisateur
 router.get('/:id/is-following', (req, res) => {
-  const followerId = req.query.followerId;
+  const { followerId } = req.query;
   const followingId = req.params.id;
 
   if (!followerId || !followingId) {
     return res.status(400).json({ message: 'Les IDs du follower et du following sont requis.' });
   }
 
-  const query = 'SELECT * FROM follows WHERE followerId = ? AND followingId = ?';
+  const query = 'SELECT COUNT(*) AS isFollowing FROM follows WHERE followerId = ? AND followingId = ?';
   db.get(query, [followerId, followingId], (err, row) => {
     if (err) {
       return res.status(500).json({ message: 'Erreur lors de la vérification du suivi.' });
     }
-    res.status(200).json({ isFollowing: !!row });
+    res.status(200).json({ isFollowing: row.isFollowing > 0 });
   });
 });
+
+
+
 
 // Route POST pour ne plus suivre un utilisateur
 router.post('/unfollow', (req, res) => {
@@ -370,34 +367,26 @@ router.get('/:userId/community/:communityId', (req, res) => {
   });
 });
 
-// Route pour récupérer les communautés d'un utilisateur
+
+// Route pour récupérer les communautés créées et rejointes par un utilisateur
 router.get('/:userId/communities', (req, res) => {
   const userId = req.params.userId;
+
   const query = `
-    SELECT communities.* FROM community_members 
-    JOIN communities ON community_members.community_id = communities.id 
-    WHERE community_members.user_id = ?
+    SELECT c.*, 
+      CASE 
+        WHEN c.created_by = ? THEN 'owner' 
+        ELSE 'member' 
+      END AS role
+    FROM communities c
+    LEFT JOIN community_members cm ON c.id = cm.community_id AND cm.user_id = ?
+    WHERE c.created_by = ? OR cm.user_id = ?
   `;
-  db.all(query, [userId], (err, rows) => {
+
+  db.all(query, [userId, userId, userId, userId], (err, rows) => {
     if (err) {
       return res.status(500).json({ error: 'Erreur lors de la récupération des communautés de l\'utilisateur.' });
     }
-    res.status(200).json(rows);
-  });
-});
-
-
-// Route pour récupérer les communautés créées par un utilisateur
-router.get('/:id/communities', (req, res) => {
-  const userId = req.params.id;
-
-  const query = `SELECT * FROM communities WHERE created_by = ?`;
-  db.all(query, [userId], (err, rows) => {
-    if (err) {
-      console.error('Erreur lors de la récupération des communautés:', err);
-      return res.status(500).json({ error: err.message });
-    }
-    console.log('Communautés trouvées:', rows); // Ajoutez ce log
     res.status(200).json(rows);
   });
 });
