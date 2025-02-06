@@ -1,7 +1,5 @@
 
 
-
-
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -25,18 +23,10 @@ const liveSessions = {};
 
 const app = express();
 
-
-// Détection de l'environnement
-const isLocal = process.env.NODE_ENV === 'development';
-
-
 // Définir directement les variables importantes dans le fichier
-const DATABASE_URL = isLocal
-  ? "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a/onvm_postgres" // URL interne pour local
-  : "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
-
+const DATABASE_URL = "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
 const JWT_SECRET = "wgzfjViViKh1FxKH03Nx13qQO45Oenq89FZ8QB/WqTo";
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 5000;
 
 // Afficher les valeurs des variables pour vérifier leur chargement
 console.log(`[INFO] DATABASE_URL : ${DATABASE_URL}`);
@@ -55,26 +45,12 @@ if (!JWT_SECRET) {
   process.exit(1); // Arrête le processus si le secret JWT est manquant
 }
 
-// Vérification des variables critiques
-if (!DATABASE_URL) {
-  console.error('[ERREUR CRITIQUE] L\'URL de connexion à la base de données n\'est pas définie.');
-  process.exit(1); // Arrête l'application si l'URL est manquante
-}
-
-if (!JWT_SECRET) {
-  console.error('[ERREUR CRITIQUE] Le secret JWT n\'est pas défini.');
-  process.exit(1); // Arrête l'application si le secret JWT est manquant
-}
-
-
 // Configuration de Knex avec la base de données PostgreSQL
 const db = knex({
   client: 'pg',
   connection: {
-    connectionString:  process.env.DATABASE_URL || "postgresql://onvmdb_user:s8BEoy1je9KdtAG4eAuliUkyw3UCdhuU@dpg-cu3qdkhu0jms73dnpo10-a.oregon-postgres.render.com/onvmdb",
-    ssl: {
-      require: true,
-      rejectUnauthorized: false },
+    connectionString: DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
   },
   pool: {
     min: 0,
@@ -84,43 +60,21 @@ const db = knex({
     reapIntervalMillis: 2000, // Vérifie les connexions toutes les 2 secondes
   },
 });
+
 // Fonction pour tester la connexion à la base de données
 const testDatabaseConnection = async () => {
   try {
-    console.log('[INFO] Tentative de connexion à la base de données PostgreSQL...');
-    console.log(`[INFO] URL de connexion utilisée : ${DATABASE_URL}`);
-
-    // Test de la connexion en exécutant une requête simple
-    const result = await db.raw('SELECT 1');
-    
-    // Vérifie si la réponse est valide
-    if (result) {
-      console.log('[INFO] Connexion réussie à la base de données PostgreSQL.');
-    } else {
-      console.error('[ERREUR CRITIQUE] La connexion à la base de données a été établie, mais aucune réponse valide n\'a été reçue.');
-      process.exit(1); // Arrête le processus si la réponse est invalide
-    }
+    console.log('[INFO] Test de connexion à la base de données PostgreSQL...');
+    await db.raw('SELECT 1');
+    console.log('[INFO] Connexion réussie à la base de données PostgreSQL.');
   } catch (err) {
-    // Affiche des détails spécifiques sur l'erreur
-    console.error('[ERREUR CRITIQUE] Impossible de se connecter à la base de données PostgreSQL :');
-    console.error(`[DÉTAILS] ${err.message}`);
-    
-    // Suggestions d'actions pour résoudre l'erreur
-    console.error('[ACTIONS] Vérifiez les points suivants :');
-    console.error('- L\'URL de connexion (DATABASE_URL) est correcte.');
-    console.error('- Les paramètres SSL sont bien configurés.');
-    console.error('- La base de données est accessible depuis le réseau.');
-    console.error('- Le serveur de base de données est en ligne.');
-
+    console.error('[ERREUR] Impossible de se connecter à la base de données PostgreSQL :', err.message);
     process.exit(1); // Arrête le processus en cas d'échec
   }
 };
 
 // Appelez cette fonction directement au démarrage
-(async () => {
-  console.log('[INFO] Initialisation de la connexion à la base de données...');
-  await testDatabaseConnection();
-})();
+testDatabaseConnection();
 
 
 // Configuration des options CORS
