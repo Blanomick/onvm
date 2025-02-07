@@ -1,9 +1,12 @@
+const express = require('express'); // Import d'Express
 
 const db = require('../db'); // Connexion à la base de données SQLite
 const multer = require('multer'); // Import de Multer pour la gestion des fichiers
 const path = require('path');
 const router = express.Router();
 const app = express();
+
+
 
 
 // Configuration de Multer pour stocker les fichiers dans le répertoire 'uploads'
