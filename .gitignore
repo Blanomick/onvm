@@ -1,13 +1,14 @@
-echo "node_modules/
+# Ignorer les fichiers et dossiers inutiles
+node_modules/
 backend/node_modules/
 frontend/node_modules/
 frontend/build/
 .DS_Store
 .env
+package-lock.json
 *.log
 *.sqlite
 *.zip
 *.exe
 *.mp4
 *.msi
-" > .gitignore
