@@ -16,7 +16,7 @@ const adminAuthRoutes = require('./routes/AdminAuth'); // Routes d'authentificat
 const communitiesRoutes = require('./routes/communities'); // Routes pour les communautés
 const searchRoutes = require('./routes/search'); // Route de recherche
 const walletRoutes = require('./routes/wallet');
-const bcrypt = require('bcryptjs');
+
 
 const http = require('http');
 const { Server } = require('socket.io');
