@@ -1,7 +1,8 @@
 
 
 const express = require('express');
-const bcryptjs = require('bcrypt');
+const bcrypt = require('bcryptjs');
+
 const jwt = require('jsonwebtoken');
 const db = require('../db'); // Connexion à la base de données SQLite
 const router = express.Router();
@@ -37,6 +38,7 @@ router.post('/register', async (req, res) => {
 
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
+
 
     db.run(
       'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
