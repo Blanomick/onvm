@@ -25,6 +25,28 @@ const liveSessions = {};
 
 const app = express();
 
+
+
+
+// ✅ Ajoute ces middlewares ici
+app.use(express.json()); 
+app.use(express.urlencoded({ extended: true }));
+
+app.use(cors({
+  origin: '*', // Autorise toutes les origines
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true // Permet l'envoi des cookies et headers sécurisés
+}));
+
+// Middleware pour répondre aux requêtes OPTIONS
+app.options('*', cors());
+
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+
 // Définir directement les variables importantes dans le fichier
 const DATABASE_URL = "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
 const JWT_SECRET = "wgzfjViViKh1FxKH03Nx13qQO45Oenq89FZ8QB/WqTo";
@@ -78,16 +100,6 @@ const testDatabaseConnection = async () => {
 // Appelez cette fonction directement au démarrage
 testDatabaseConnection();
 
-
-// Configuration des options CORS
-const corsOptions = {
-  origin: ['https://onvm.org', 'http://localhost:3000'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-};
-// Middleware CORS
-app.use(require('cors')(corsOptions));
 
 // Configuration de multer pour la gestion des fichiers
 
@@ -181,17 +193,23 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Erreur interne du serveur' });
 });
 
-server.listen(PORT, async () => {
-  try {
-    console.log(`[INFO] Serveur démarré sur le port ${PORT}.`);
-    console.log('[INFO] Initialisation de la base de données...');
-    await initializeDatabase();
-    console.log('[INFO] Base de données initialisée avec succès.');
-  } catch (err) {
-    console.error(`[ERREUR] Problème lors de l'initialisation : ${err.message}`);
-    process.exit(1); // Arrête le serveur si l'initialisation échoue
-  }
-});
+
+db.raw('SELECT 1')
+  .then(() => console.log('[INFO] PostgreSQL est bien connecté'))
+  .catch(err => console.error('[ERREUR] Impossible de se connecter à PostgreSQL :', err.message));
+
+  server.listen(PORT, async () => {
+    try {
+      console.log(`[INFO] Serveur démarré sur http://localhost:${PORT}`);
+      console.log('[INFO] Initialisation de la base de données...');
+      await initializeDatabase();
+      console.log('[INFO] Base de données initialisée avec succès.');
+    } catch (err) {
+      console.error(`[ERREUR] Problème lors de l'initialisation : ${err.message}`);
+      process.exit(1);
+    }
+  });
+  
 
 
 // Gestion des erreurs pour les routes non trouvées (404)

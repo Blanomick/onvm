@@ -41,8 +41,11 @@ const upload = multer({
 
 
 
+
 // Création de publication
-router.post('/', upload.single('media'), (req, res) => {
+router.post('/', upload.single('media'), async (req, res) => {
+  console.log('[LOG] Données reçues:', req.body);
+  
   const { userId, content } = req.body;
   const media = req.file ? `/uploads/${req.file.filename}` : null;
 
@@ -50,98 +53,97 @@ router.post('/', upload.single('media'), (req, res) => {
     return res.status(400).json({ message: 'Les champs utilisateur et contenu sont obligatoires.' });
   }
 
-  const query = 'INSERT INTO publications (userId, content, media) VALUES (?, ?, ?)';
-  db.run(query, [userId, content, media], function (err) {
-    if (err) {
-      console.error('[ERREUR] Erreur lors de la création de la publication', err);
-      return res.status(500).json({ message: 'Erreur lors de la création de la publication.' });
-    }
-    res.status(201).json({ message: 'Publication ajoutée avec succès!', id: this.lastID });
-  });
+  try {
+    const [newPublication] = await db('publications')
+      .insert({ userId, content, media })
+      .returning('id');
+
+    res.status(201).json({ message: 'Publication ajoutée avec succès!', id: newPublication.id });
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de la création de la publication:', err);
+    res.status(500).json({ message: 'Erreur lors de la création de la publication.', error: err.message });
+  }
 });
+
+
 
 // Récupération de toutes les publications avec utilisateur, photo de profil et leurs commentaires et réponses
-router.get('/', (req, res) => {
-  const query = `
-    SELECT publications.*, users.username, users.profilePicture,
-           COUNT(publication_likes.id) AS likes,
-           COUNT(retweets.id) AS retweetsCount
-    FROM publications
-    JOIN users ON publications.userId = users.id
-    LEFT JOIN publication_likes ON publications.id = publication_likes.publicationId
-    LEFT JOIN retweets ON publications.id = retweets.publicationId
-    GROUP BY publications.id
-    ORDER BY publications.created_at DESC
-LIMIT ? OFFSET ?
 
-  `;
+router.get('/', async (req, res) => {
+  try {
+    const publications = await db('publications')
+      .select(
+        'publications.id',
+        'publications.userId',
+        'publications.content',
+        'publications.media',
+        'publications.created_at',
+        'users.username',
+        'users.profilePicture'
+      )
+      .leftJoin('users', 'publications.userId', 'users.id')
+      .orderBy('publications.created_at', 'desc');
 
-  db.all(query, [], async (err, publications) => {
-    if (err) {
-      console.error('[ERREUR] Erreur lors de la récupération des publications', err);
-      return res.status(500).json({ message: 'Erreur lors de la récupération des publications.' });
-    }
-
-    // Ajout des commentaires et réponses pour chaque publication
-    for (let publication of publications) {
-      publication.comments = await getCommentsForPublication(publication.id);
-      for (let comment of publication.comments) {
-        comment.replies = await getRepliesForComment(comment.id);
-      }
-    }
-    res.status(200).json(publications);
-  });
-});
-
-// Fonction pour récupérer les commentaires d'une publication
-function getCommentsForPublication(publicationId) {
-  return new Promise((resolve, reject) => {
-    const query = `
-      SELECT commentaires.*, users.username, users.profilePicture
-      FROM commentaires
-      JOIN users ON commentaires.userId = users.id
-      WHERE commentaires.publicationId = ?
-      ORDER BY commentaires.created_at ASC
-    `;
-    db.all(query, [publicationId], (err, rows) => {
-      if (err) {
-        console.error('[ERREUR] Erreur lors de la récupération des commentaires:', err);
-        reject(err);
-      } else {
-        
-        Promise.all(rows.map(async (comment) => {
+      await Promise.all(publications.map(async (publication) => {
+        publication.comments = await getCommentsForPublication(publication.id);
+        await Promise.all(publication.comments.map(async (comment) => {
           comment.replies = await getRepliesForComment(comment.id);
         }));
-        
-        resolve(rows);
-      }
-    });
-  });
+      }));
+      
+
+    res.status(200).json(publications);
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de la récupération des publications', err);
+    res.status(500).json({ message: 'Erreur lors de la récupération des publications.' });
+  }
+});
+
+
+
+// Fonction pour récupérer les commentaires d'une publication
+
+
+async function getCommentsForPublication(publicationId) {
+  try {
+    const comments = await db('commentaires')
+      .select('commentaires.*', 'users.username', 'users.profilePicture')
+      .join('users', 'commentaires.userId', 'users.id')
+      .where('commentaires.publicationId', publicationId)
+      .orderBy('commentaires.created_at', 'asc');
+
+    for (let comment of comments) {
+      comment.replies = await getRepliesForComment(comment.id);
+    }
+
+    return comments;
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de la récupération des commentaires:', err);
+    throw err;
+  }
 }
+
+
 
 // Fonction pour récupérer les réponses d'un commentaire
-function getRepliesForComment(commentId) {
-  return new Promise((resolve, reject) => {
-    const query = `
-      SELECT replies.*, users.username, users.profilePicture
-      FROM replies
-      JOIN users ON replies.userId = users.id
-      WHERE replies.commentId = ?
-      ORDER BY replies.created_at ASC
-    `;
-    db.all(query, [commentId], (err, rows) => {
-      if (err) {
-        console.error('[ERREUR] Erreur lors de la récupération des réponses :', err);
-        reject(err);
-      } else {
-        resolve(rows);
-      }
-    });
-  });
+
+async function getRepliesForComment(commentId) {
+  try {
+    return await db('replies')
+      .select('replies.*', 'users.username', 'users.profilePicture')
+      .join('users', 'replies.userId', 'users.id')
+      .where('replies.commentId', commentId)
+      .orderBy('replies.created_at', 'asc');
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de la récupération des réponses :', err);
+    throw err;
+  }
 }
 
+
+
 // Route pour gérer le retweet d'une publication
-router.post('/:publicationId/retweet', (req, res) => {
+router.post('/:publicationId/retweet', async (req, res) => {
   const { publicationId } = req.params;
   const { userId } = req.body;
 
@@ -153,68 +155,51 @@ router.post('/:publicationId/retweet', (req, res) => {
     return res.status(400).json({ message: "Les champs userId et publicationId sont requis." });
   }
 
-  // Vérification si la publication existe
-  const checkPublicationQuery = `SELECT id FROM publications WHERE id = ?`;
-  db.get(checkPublicationQuery, [publicationId], (err, row) => {
-    if (err) {
-      console.error('[ERREUR] Erreur lors de la vérification de la publication :', err);
-      return res.status(500).json({ message: 'Erreur lors de la vérification de la publication.' });
-    }
+  try {
+    // Vérification si la publication existe
+    const publication = await db('publications').where({ id: publicationId }).first();
+if (!publication) {
+  console.error('[ERREUR] La publication avec id', publicationId, 'n\'existe pas.');
+  return res.status(404).json({ message: 'Publication introuvable.' });
+}
 
-    if (!row) {
+
+    if (publication.length === 0) {
       console.error('[ERREUR] La publication avec id', publicationId, 'n\'existe pas.');
       return res.status(404).json({ message: 'Publication introuvable.' });
     }
 
-    // Ajout du retweet
-    const insertRetweetQuery = `
-      INSERT INTO retweets (userId, publicationId, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-    `;
-    db.run(insertRetweetQuery, [userId, publicationId], function (err) {
-      if (err) {
-        console.error('[ERREUR] Erreur lors de l\'ajout du retweet :', err);
+    // Vérification si l'utilisateur a déjà retweeté cette publication
+    const existingRetweet = await db('retweets')
+    .where({ userId, publicationId })
+    .first();
+  
+  if (existingRetweet) {
+    return res.status(400).json({ message: 'Vous avez déjà retweeté cette publication.' });
+  }
+  
+  const newRetweet = await db('retweets')
+  .insert({ userId, publicationId })
+  .returning(['id']);
 
-        // Gestion de l'erreur pour éviter les conflits (comme les contraintes uniques)
-        if (err.message.includes('UNIQUE constraint failed')) {
-          return res.status(400).json({ message: 'Vous avez déjà retweeté cette publication.' });
-        }
-        return res.status(500).json({ message: 'Erreur lors de l\'ajout du retweet.' });
-      }
+if (!newRetweet || newRetweet.length === 0) {
+  console.error('[ERREUR] Impossible d\'ajouter le retweet.');
+  return res.status(500).json({ message: 'Erreur lors de l\'ajout du retweet.' });
+}
 
-      console.log(
-        '[SUCCÈS] Retweet ajouté avec succès pour userId :',
-        userId,
-        'et publicationId :',
-        publicationId
-      );
-      res.status(200).json({ message: 'Retweet ajouté avec succès.', id: this.lastID });
-    });
-  });
+console.log('[SUCCÈS] Retweet ajouté avec succès pour userId :', userId, 'et publicationId :', publicationId);
+res.status(200).json({ message: 'Retweet ajouté avec succès.', id: newRetweet[0].id });
+
+
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de l\'ajout du retweet :', err);
+    res.status(500).json({ message: 'Erreur lors de l\'ajout du retweet.' });
+  }
 });
-
 
   
 
 // Ajout de commentaire pour une publication avec support de différents types de médias (audio, image, vidéo)
-router.post('/:publicationId/comment', upload.fields([{ name: 'media' }, { name: 'audio' }]), (req, res) => {
-  const { publicationId } = req.params;
-  const { userId, comment } = req.body;
-  const mediaPath = req.files['media'] ? `/uploads/${req.files['media'][0].filename}` : null;
-  const audioPath = req.files['audio'] ? `/uploads/${req.files['audio'][0].filename}` : null;
-
-  if (!userId || (!comment && !mediaPath && !audioPath)) {
-    return res.status(400).json({ message: 'Les champs userId et au moins un des champs comment, media, ou audio sont obligatoires.' });
-  }
-
-  const query = 'INSERT INTO commentaires (userId, publicationId, comment, media, audio) VALUES (?, ?, ?, ?, ?)';
-  db.run(query, [userId, publicationId, comment, mediaPath, audioPath], function (err) {
-    if (err) {
-      console.error('[ERREUR] Erreur lors de l\'ajout du commentaire:', err);
-      return res.status(500).json({ message: 'Erreur lors de l\'ajout du commentaire.' });
-    }
-    res.status(200).json({ message: 'Commentaire ajouté avec succès.', id: this.lastID });
-  });
-});
 
 // Ajouter une réponse à un commentaire
 router.post('/comments/:commentId/reply', (req, res) => {
@@ -236,23 +221,38 @@ router.post('/comments/:commentId/reply', (req, res) => {
 });
 
 // Liker une publication
-router.post('/:publicationId/like', (req, res) => {
+
+router.post('/:publicationId/like', async (req, res) => {
   const { publicationId } = req.params;
   const { userId } = req.body;
 
   if (!userId) {
-    return res.status(400).json({ message: 'L\'ID de l\'utilisateur est requis.' });
+    return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
   }
 
-  const query = 'INSERT INTO publication_likes (userId, publicationId) VALUES (?, ?)';
-  db.run(query, [userId, publicationId], function (err) {
-    if (err) {
-      console.error('[ERREUR] Erreur lors de l\'ajout du like :', err);
-      return res.status(500).json({ message: 'Erreur lors de l\'ajout du like.' });
-    }
-    res.status(200).json({ message: 'Like ajouté avec succès.', id: this.lastID });
-  });
+  try {
+    // Vérifier si l'utilisateur a déjà liké la publication
+  
+    const existingLike = await db('likes')
+    .where({ userId, publicationId })
+    .first();
+  
+  if (existingLike) {
+    return res.status(400).json({ message: 'Vous avez déjà liké cette publication.' });
+  }
+  
+  const [newLike] = await db('likes')
+    .insert({ userId, publicationId })
+    .returning('id');
+  
+
+    res.status(200).json({ message: 'Like ajouté avec succès.', id: newLike.id });
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de l\'ajout du like :', err);
+    res.status(500).json({ message: 'Erreur lors de l\'ajout du like.', error: err.message });
+  }
 });
+
 
 // Route GET pour récupérer les commentaires d'une publication spécifique
 router.get('/:id/comments', async (req, res) => {
@@ -266,50 +266,55 @@ router.get('/:id/comments', async (req, res) => {
 });
 
 // Suppression d'une publication
-router.delete('/:publicationId', (req, res) => {
+
+
+router.delete('/:publicationId', async (req, res) => {
   const { publicationId } = req.params;
+  const { userId } = req.body;
 
-  console.log('[BACKEND] Requête de suppression reçue pour publicationId :', publicationId);
-
-  const { userId } = req.body; // Récupère l'ID de l'utilisateur qui tente la suppression
-
-if (!userId) {
-  return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
-}
-
-const deleteQuery = 'DELETE FROM publications WHERE id = ? AND userId = ?';
-db.run(deleteQuery, [publicationId, userId], function (err) {
-  if (err) {
-    console.error('[ERREUR] Erreur lors de la suppression de la publication :', err);
-    return res.status(500).json({ message: 'Erreur lors de la suppression de la publication.' });
+  if (!userId) {
+    return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
   }
 
-  if (this.changes === 0) {
-    console.warn('[INFO] Suppression refusée, l\'utilisateur n\'est pas l\'auteur.');
-    return res.status(403).json({ message: 'Vous n\'êtes pas autorisé à supprimer cette publication.' });
+  try {
+    const deletedPublication = await db('publications')
+    .where({ id: publicationId, userId })
+    .del();
+  
+  if (deletedPublication === 0) {
+    return res.status(403).json({ message: "Vous n'êtes pas autorisé à supprimer cette publication." });
   }
-
-  console.log('[SUCCÈS] Publication supprimée avec succès, id :', publicationId);
-  res.status(200).json({ message: 'Publication supprimée avec succès.' });
-});
-
-
-
-  db.run(deleteQuery, [publicationId], function (err) {
-    if (err) {
-      console.error('[ERREUR] Erreur lors de la suppression de la publication :', err);
-      return res.status(500).json({ message: 'Erreur lors de la suppression de la publication.' });
-    }
-
-    if (this.changes === 0) {
-      console.warn('[INFO] Publication non trouvée pour suppression, id :', publicationId);
-      return res.status(404).json({ message: 'Publication non trouvée.' });
-    }
-
-    console.log('[SUCCÈS] Publication supprimée avec succès, id :', publicationId);
+  
     res.status(200).json({ message: 'Publication supprimée avec succès.' });
-  });
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de la suppression de la publication :', err);
+    res.status(500).json({ message: 'Erreur lors de la suppression de la publication.', error: err.message });
+  }
 });
+
+
+// Ajouter un commentaire à une publication
+router.post('/:publicationId/comment', upload.single('media'), async (req, res) => {
+  const { publicationId } = req.params;
+  const { userId, comment } = req.body;
+  const media = req.file ? `/uploads/${req.file.filename}` : null;
+
+  if (!userId || !comment) {
+    return res.status(400).json({ message: 'Les champs userId et comment sont obligatoires.' });
+  }
+
+  try {
+    const [newComment] = await db('commentaires')
+      .insert({ publicationId, userId, comment, media })
+      .returning('id');
+
+    res.status(201).json({ message: 'Commentaire ajouté avec succès!', id: newComment.id });
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de l\'ajout du commentaire:', err);
+    res.status(500).json({ message: 'Erreur lors de l\'ajout du commentaire.', error: err.message });
+  }
+});
+
 
 
 module.exports = router;

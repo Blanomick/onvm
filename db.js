@@ -3,7 +3,7 @@ const knex = require('knex');
 
 
 // URL de connexion PostgreSQL
-const connectionString =
+const connectionString =                     
   "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
 
 // Vérification si l'URL de connexion est définie
@@ -29,6 +29,38 @@ const db = knex({
     reapIntervalMillis: 1000, // Vérifie les connexions inactives toutes les secondes
   },
 });
+
+// Vérifier si la colonne publicationId existe bien dans la table retweets
+// ✅ Maintenant, on peut vérifier les colonnes (car `db` est initialisé)
+(async () => {
+  try {
+    const result = await db.raw("SELECT column_name FROM information_schema.columns WHERE table_name = 'retweets'");
+    console.log("[INFO] Colonnes de la table retweets :", result.rows);
+  } catch (error) {
+    console.error("[ERREUR] Impossible de récupérer les colonnes :", error.message);
+  }
+})();
+
+
+// Vérification de la connexion à la base de données
+(async () => {
+  try {
+    console.log('[INFO] Test de connexion à la base de données PostgreSQL...');
+    await db.raw('SELECT 1'); // Vérifie si la connexion est valide
+    console.log('[INFO] Connexion réussie à la base de données PostgreSQL.');
+
+    // Vérifier si la colonne publicationId existe bien dans la table retweets
+    const result = await db.raw("SELECT column_name FROM information_schema.columns WHERE table_name = 'retweets'");
+    console.log("[INFO] Colonnes de la table retweets :", result.rows);
+  } catch (error) {
+    console.error('[ERREUR CRITIQUE] Échec de connexion à la base de données PostgreSQL.');
+    console.error(`[DÉTAILS] ${error.message}`);
+    console.error('[ACTIONS] Vérifiez que l\'URL de connexion est correcte et que la base de données est accessible.');
+    process.exit(1); // Arrête l'application si la connexion échoue
+  }
+})();
+
+
 
 // Vérification de la connexion à la base de données
 (async () => {

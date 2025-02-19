@@ -1,12 +1,26 @@
 const express = require('express'); // Import d'Express
 
-const db = require('../db'); // Connexion à la base de données SQLite
+
 const multer = require('multer'); // Import de Multer pour la gestion des fichiers
 const path = require('path');
 const router = express.Router();
 const app = express();
 
 
+
+const db = require('../db'); // Importer la connexion à la base de données
+
+
+
+router.get('/', async (req, res) => {
+  try {
+    const users = await db.select('id', 'username', 'profilePicture').from('users');
+    res.status(200).json(users);
+  } catch (err) {
+    console.error("[ERREUR] Impossible de récupérer les utilisateurs :", err);
+    res.status(500).json({ message: 'Erreur lors de la récupération des utilisateurs.' });
+  }
+});
 
 
 // Configuration de Multer pour stocker les fichiers dans le répertoire 'uploads'
@@ -23,103 +37,136 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage }); // Initialisation de Multer avec la configuration de stockage
 
-// Route GET pour rechercher les utilisateurs par nom de profil (recherche)
-router.get('/search', (req, res) => {
-  const query = req.query.q ? req.query.q.trim() : '';
-  if (!query) {
-    return res.status(400).json({ message: 'Le champ de recherche est requis.' });
-  }
 
-  const searchQuery = `
-    SELECT id, username, email, profilePicture 
-    FROM users 
-    WHERE LOWER(username) LIKE LOWER(?)
-  `;
-  const searchValue = `%${query}%`;
+// 🔹 Route GET pour rechercher les utilisateurs par nom de profil (recherche)
+router.get('/search', async (req, res) => {
+  try {
+    const query = req.query.q ? req.query.q.trim().toLowerCase() : '';
 
-  db.all(searchQuery, [searchValue], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la recherche des utilisateurs.' });
+    if (!query) {
+      return res.status(400).json({ message: 'Le champ de recherche est requis.' });
     }
-    if (rows.length === 0) {
+
+    
+const searchResults = await db('users')
+  .select('id', 'username', 'email', 'profilePicture')
+  .where('username', 'ILIKE', `%${query}%`);
+
+
+
+
+    if (searchResults.length === 0) {
       return res.status(404).json({ message: 'Aucun utilisateur trouvé.' });
     }
-    res.status(200).json(rows);
-  });
+
+    res.status(200).json(searchResults);
+  } catch (error) {
+    console.error('[ERREUR] Erreur interne du serveur lors de la recherche des utilisateurs :', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
 });
 
-// Route GET pour récupérer les données supplémentaires de l'utilisateur
 router.get('/:id/extra-data', async (req, res) => {
   const userId = req.params.id;
   try {
-      const extraData = await getUserExtraData(userId); // Appel de la fonction pour récupérer les données
-      res.json(extraData);
-  } catch (error) {
-      console.error(`[ERREUR] Problème lors de la récupération des données supplémentaires de l'utilisateur ${userId}:`, error);
-      res.status(500).json({ message: 'Erreur lors de la récupération des données supplémentaires' });
+    const extraData = await db('users')
+      .select('bio', 'profilePicture')
+      .where({ id: userId })
+      .first();
+
+    if (!extraData) {
+      return res.status(404).json({ message: "Données supplémentaires introuvables." });
+    }
+
+    res.status(200).json(extraData);
+  } catch (err) {
+    console.error(`[ERREUR] Erreur lors de la récupération des données supplémentaires pour l'utilisateur ${userId}:`, err);
+    res.status(500).json({ message: 'Erreur lors de la récupération des données supplémentaires.' });
   }
 });
 
 
 
-// Fonction pour récupérer les données supplémentaires de l'utilisateur depuis la base de données
-async function getUserExtraData(userId) {
-  return new Promise((resolve, reject) => {
-      const query = `SELECT additionalField1, additionalField2 FROM userExtraData WHERE userId = ?`; // Remplacez par vos colonnes et table exactes
-      db.get(query, [userId], (err, row) => {
-          if (err) {
-              console.error("[ERREUR] Impossible de récupérer les données supplémentaires:", err);
-              reject(err);
-          } else {
-              resolve(row || {}); // Retourne un objet vide si aucune donnée n'est trouvée
-          }
+// 🔹 Route pour récupérer la liste des abonnés (followers) d'un utilisateur
+router.get('/:id/followers-list', async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    if (!userId) {
+      return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
+    }
+
+    const query = `
+      SELECT users.id, users.username, users.profilePicture 
+      FROM follows 
+      JOIN users ON follows.followerId = users.id 
+      WHERE follows.followingId = ?
+    `;
+
+    const followers = await db
+      .raw(query, [userId])
+      .then((result) => result.rows)
+      .catch((err) => {
+        console.error('[ERREUR] Erreur lors de la récupération des abonnés :', err);
+        throw err;
       });
-  });
-}
 
-
-// Route pour récupérer la liste des abonnés (followers) d'un utilisateur
-router.get('/:id/followers-list', (req, res) => {
-  const userId = req.params.id;
-
-  const query = `SELECT users.id, users.username FROM follows JOIN users ON follows.followerId = users.id WHERE followingId = ?`;
-  db.all(query, [userId], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la récupération des abonnés.' });
-    }
-    res.status(200).json(rows);
-  });
+    res.status(200).json(followers);
+  } catch (error) {
+    console.error('[ERREUR] Erreur interne du serveur lors de la récupération des abonnés :', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
 });
 
-// Route pour récupérer la liste des personnes suivies (following)
-router.get('/:id/following-list', (req, res) => {
-  const userId = req.params.id;
+// 🔹 Route pour récupérer la liste des personnes suivies (following)
+router.get('/:id/following-list', async (req, res) => {
+  try {
+    const userId = req.params.id;
 
-  const query = `SELECT users.id, users.username FROM follows JOIN users ON follows.followingId = users.id WHERE followerId = ?`;
-  db.all(query, [userId], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la récupération des suivis.' });
+    if (!userId) {
+      return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
     }
-    res.status(200).json(rows);
-  });
+
+    const query = `
+      SELECT users.id, users.username, users.profilePicture 
+      FROM follows 
+      JOIN users ON follows.followingId = users.id 
+      WHERE follows.followerId = ?
+    `;
+
+    const following = await db
+      .raw(query, [userId])
+      .then((result) => result.rows)
+      .catch((err) => {
+        console.error('[ERREUR] Erreur lors de la récupération des abonnements :', err);
+        throw err;
+      });
+
+    res.status(200).json(following);
+  } catch (error) {
+    console.error('[ERREUR] Erreur interne du serveur lors de la récupération des abonnements :', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
 });
+
 
 // Route pour récupérer le nombre de followers
-router.get('/:id/followers', (req, res) => {
+
+router.get('/:id/followers', async (req, res) => {
   const userId = req.params.id;
-
-  const query = `SELECT COUNT(*) AS totalFollowers FROM follows WHERE followingId = ?`;
-
-  db.get(query, [userId], (err, row) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la récupération des abonnés.' });
-    }
-    res.status(200).json({ totalFollowers: row.totalFollowers });
-  });
+  try {
+    const result = await db('follows').count('* as totalFollowers').where({ followingId: userId }).first();
+    res.status(200).json({ totalFollowers: result.totalFollowers });
+  } catch (err) {
+    console.error("[ERREUR] Erreur lors de la récupération des abonnés :", err);
+    res.status(500).json({ message: 'Erreur lors de la récupération des abonnés.' });
+  }
 });
 
+
 // Route pour mettre à jour la biographie de l'utilisateur
-router.put('/:id/bio', (req, res) => {
+
+router.put('/:id/bio', async (req, res) => {
   const userId = req.params.id;
   const newBio = req.body.bio;
 
@@ -127,14 +174,17 @@ router.put('/:id/bio', (req, res) => {
     return res.status(400).json({ message: 'La biographie ne peut pas être vide.' });
   }
 
-  const updateBioQuery = `UPDATE users SET bio = ? WHERE id = ?`;
-  db.run(updateBioQuery, [newBio, userId], function(err) {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la mise à jour de la biographie.' });
-    }
+  try {
+    await db('users').where({ id: userId }).update({ bio: newBio });
     res.status(200).json({ message: 'Biographie mise à jour avec succès!' });
-  });
+  } catch (err) {
+    console.error("[ERREUR] Erreur lors de la mise à jour de la biographie :", err);
+    res.status(500).json({ message: 'Erreur lors de la mise à jour de la biographie.' });
+  }
 });
+
+
+
 
 // Route POST pour suivre un utilisateur
 router.post('/follow', (req, res) => {
@@ -164,65 +214,103 @@ router.post('/follow', (req, res) => {
 });
 
 // Route GET pour récupérer les informations d'un utilisateur par son ID
-router.get('/:id', (req, res) => {
+
+router.get('/:id', async (req, res) => {
   const userId = req.params.id;
 
-  db.get('SELECT * FROM users WHERE id = ?', [userId], (err, row) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la récupération de l\'utilisateur.' });
-    }
-    if (!row) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
-    }
-    res.json(row);
-  });
-});
-
-
-// Exemple dans users.js
-router.get('/:id/extra-data', async (req, res) => {
-  const userId = req.params.id;
   try {
-      // Remplacez ceci par votre logique pour récupérer les données supplémentaires de l'utilisateur
-      const extraData = await getUserExtraData(userId); // Fonction à définir selon votre logique
-      res.json(extraData);
-  } catch (error) {
-      console.error(`[ERREUR] Problème lors de la récupération des données supplémentaires de l'utilisateur ${userId}:`, error);
-      res.status(500).json({ message: 'Erreur lors de la récupération des données supplémentaires' });
+    const user = await db('users').where({ id: userId }).first();
+
+    if (!user) {
+      return res.status(404).json({ message: "Utilisateur introuvable." });
+    }
+
+    res.status(200).json(user);
+  } catch (err) {
+    console.error("[ERREUR] Erreur lors de la récupération de l'utilisateur :", err);
+    res.status(500).json({ message: "Erreur lors de la récupération des données utilisateur." });
   }
 });
 
-// Route GET pour récupérer le solde du portefeuille d'un utilisateur
-router.get('/:userId/wallet/balance', (req, res) => {
-  const userId = req.params.userId;
+router.get('/:id/extra-data', async (req, res) => {
+  const userId = req.params.id;
+  try {
+    const extraData = await db('users')
+      .select('bio', 'profilePicture')
+      .where({ id: userId })
+      .first();
 
-  db.get('SELECT balance FROM wallet WHERE userId = ?', [userId], (err, row) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la récupération du solde du portefeuille.' });
+    if (!extraData) {
+      return res.status(404).json({ message: "Données supplémentaires introuvables." });
     }
-    if (!row) {
-      return res.status(404).json({ message: 'Portefeuille non trouvé.' });
-    }
-    res.status(200).json({ balance: row.balance });
-  });
+
+    res.status(200).json(extraData);
+  } catch (err) {
+    console.error(`[ERREUR] Erreur lors de la récupération des données supplémentaires pour l'utilisateur ${userId}:`, err);
+    res.status(500).json({ message: 'Erreur lors de la récupération des données supplémentaires.' });
+  }
 });
 
-// Route GET pour récupérer l'historique des transactions du portefeuille d'un utilisateur
-router.get('/:userId/wallet/history', (req, res) => {
+
+
+// Route GET pour récupérer le solde du portefeuille d'un utilisateur
+
+router.get('/:userId/wallet/balance', async (req, res) => {
   const userId = req.params.userId;
 
-  const query = `SELECT * FROM transactions WHERE userId = ? ORDER BY date DESC`;
-  db.all(query, [userId], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la récupération de l\'historique des transactions.' });
+  try {
+    const wallet = await db('wallet').select('balance').where({ userId }).first();
+
+    if (!wallet) {
+      return res.status(404).json({ message: "Portefeuille introuvable." });
     }
-    res.status(200).json({ transactions: rows });
-  });
+
+    res.status(200).json({ balance: wallet.balance });
+  } catch (err) {
+    console.error("[ERREUR] Erreur lors de la récupération du solde du portefeuille :", err);
+    res.status(500).json({ message: "Erreur 500 lors de la récupération du solde." });
+  }
+});
+
+
+
+
+// 🔹 Route GET pour récupérer l'historique des transactions du portefeuille d'un utilisateur
+router.get('/:userId/wallet/history', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+
+    if (!userId) {
+      return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
+    }
+
+    const query = `
+      SELECT id, type, amount, date 
+      FROM transactions 
+      WHERE userId = ? 
+      ORDER BY date DESC
+    `;
+
+    const transactions = await db
+      .raw(query, [userId])
+      .then((result) => result.rows)
+      .catch((err) => {
+        console.error('[ERREUR] Erreur lors de la récupération de l\'historique des transactions :', err);
+        throw err;
+      });
+
+    res.status(200).json({ transactions });
+  } catch (error) {
+    console.error('[ERREUR] Erreur interne du serveur lors de la récupération des transactions :', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
 });
 
 
 // Route PUT pour mettre à jour la photo de profil
-router.put('/:id/profile-picture', upload.single('profilePicture'), (req, res) => {
+
+
+router.put('/:id/profile-picture', upload.single('profilePicture'), async (req, res) => {
   const userId = req.params.id;
   const profilePicturePath = req.file ? `/uploads/${req.file.filename}` : null;
 
@@ -230,50 +318,88 @@ router.put('/:id/profile-picture', upload.single('profilePicture'), (req, res) =
     return res.status(400).json({ message: 'La photo de profil est requise.' });
   }
 
-  const updateQuery = 'UPDATE users SET profilePicture = ? WHERE id = ?';
-  db.run(updateQuery, [profilePicturePath, userId], (err) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la mise à jour de la photo de profil.' });
-    }
+  try {
+    await db('users').where({ id: userId }).update({ profilePicture: profilePicturePath });
     res.status(200).json({ message: 'Photo de profil mise à jour avec succès.', profilePicture: profilePicturePath });
-  });
+  } catch (err) {
+    console.error("[ERREUR] Erreur lors de la mise à jour de la photo de profil :", err);
+    res.status(500).json({ message: 'Erreur lors de la mise à jour de la photo de profil.' });
+  }
 });
 
-// Route GET pour récupérer les publications d'un utilisateur
-router.get('/:id/publications', (req, res) => {
-  const userId = req.params.id;
 
-  const query = `
-    SELECT * FROM publications 
-    WHERE userId = ? 
-    ORDER BY created_at DESC
-  `;
-  db.all(query, [userId], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la récupération des publications.' });
+
+
+// 🔹 Route GET pour récupérer les publications d'un utilisateur
+router.get('/:id/publications', async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    if (!userId) {
+      return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
     }
-    res.status(200).json(rows);
-  });
+
+    const query = `
+     SELECT p.id, p.content, p.media, p.created_at, u.username, u.profilePicture
+FROM publications p
+JOIN users u ON p."userId" = u.id
+WHERE p."userId" = ?
+ORDER BY p.created_at DESC
+
+    `;
+
+    const publications = await db
+      .raw(query, [userId])
+      .then((result) => result.rows)
+      .catch((err) => {
+        console.error('[ERREUR] Erreur lors de la récupération des publications :', err);
+        throw err;
+      });
+
+    res.status(200).json({ publications });
+  } catch (error) {
+    console.error('[ERREUR] Erreur interne du serveur lors de la récupération des publications :', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
 });
 
-// Route GET pour récupérer les retweets d'un utilisateur
-router.get('/:id/retweets', (req, res) => {
-  const userId = req.params.id;
+// 🔹 Route GET pour récupérer les retweets d'un utilisateur
+router.get('/:id/retweets', async (req, res) => {
+  try {
+    const userId = req.params.id;
 
-  const query = `
-    SELECT publications.*, users.username 
-    FROM retweets 
-    JOIN publications ON retweets.publicationId = publications.id
-    JOIN users ON publications.userId = users.id
-    WHERE retweets.userId = ?
-    ORDER BY retweets.created_at DESC
-  `;
-  db.all(query, [userId], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la récupération des retweets.' });
+    if (!userId) {
+      return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
     }
-    res.status(200).json(rows);
-  });
+
+    
+
+    const query = `
+   SELECT p.id, p.content, p.media, p.created_at, u.username AS originalPoster, u.profilePicture,
+       r."userId" AS retweeterId, ru.username AS retweeterUsername, ru.profilePicture AS retweeterProfile
+FROM retweets r
+JOIN publications p ON r."publicationId" = p.id
+JOIN users u ON p."userId" = u.id
+JOIN users ru ON r."userId" = ru.id
+WHERE r."userId" = ?
+ORDER BY r.created_at DESC;
+
+`;
+
+
+    const retweets = await db
+      .raw(query, [userId])
+      .then((result) => result.rows)
+      .catch((err) => {
+        console.error('[ERREUR] Erreur lors de la récupération des retweets :', err);
+        throw err;
+      });
+
+    res.status(200).json({ retweets });
+  } catch (error) {
+    console.error('[ERREUR] Erreur interne du serveur lors de la récupération des retweets :', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
 });
 
 // Route DELETE pour supprimer un retweet par publicationId et userId
@@ -294,22 +420,18 @@ router.delete('/retweets/:publicationId/:userId', (req, res) => {
 });
 
 
-router.get('/:id/is-following', (req, res) => {
-  const { followerId } = req.query;
-  const followingId = req.params.id;
 
-  if (!followerId || !followingId) {
-    return res.status(400).json({ message: 'Les IDs du follower et du following sont requis.' });
+router.get('/:id/followers', async (req, res) => {
+  const userId = req.params.id;
+  try {
+    const result = await db('follows').count('* as totalFollowers').where({ followingId: userId }).first();
+    res.status(200).json({ totalFollowers: result.totalFollowers });
+  } catch (err) {
+    console.error("[ERREUR] Erreur lors de la récupération des abonnés :", err);
+    res.status(500).json({ message: 'Erreur lors de la récupération des abonnés.' });
   }
-
-  const query = 'SELECT COUNT(*) AS isFollowing FROM follows WHERE followerId = ? AND followingId = ?';
-  db.get(query, [followerId, followingId], (err, row) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la vérification du suivi.' });
-    }
-    res.status(200).json({ isFollowing: row.isFollowing > 0 });
-  });
 });
+
 
 
 
@@ -331,22 +453,30 @@ router.post('/unfollow', (req, res) => {
   });
 });
 
-// Route GET pour récupérer la liste de tous les utilisateurs
+// 🔹 Route GET pour récupérer la liste de tous les utilisateurs
 router.get('/all', async (req, res) => {
   try {
-    const query = 'SELECT id, username, profilePicture FROM users';
-    const users = await new Promise((resolve, reject) => {
-      db.all(query, [], (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(rows);
-        }
+    console.log('[LOG] Récupération de la liste de tous les utilisateurs...');
+
+    const query = `
+      SELECT id, username, profilePicture
+      FROM users
+      ORDER BY username ASC
+    `;
+
+    const users = await db
+      .raw(query)
+      .then((result) => result.rows)
+      .catch((err) => {
+        console.error('[ERREUR] Erreur lors de la récupération des utilisateurs :', err);
+        throw err;
       });
-    });
+
+    console.log(`[LOG] ${users.length} utilisateurs récupérés.`);
     res.status(200).json(users);
-  } catch (err) {
-    res.status(500).json({ message: 'Erreur lors de la récupération des utilisateurs.' });
+  } catch (error) {
+    console.error('[ERREUR] Erreur interne du serveur lors de la récupération des utilisateurs :', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
 
@@ -371,49 +501,73 @@ router.get('/:userId/community/:communityId', (req, res) => {
 });
 
 
-// Route pour récupérer les communautés créées et rejointes par un utilisateur
-router.get('/:userId/communities', (req, res) => {
+// 🔹 Route pour récupérer les communautés créées et rejointes par un utilisateur
+router.get('/:userId/communities', async (req, res) => {
   const userId = req.params.userId;
 
-  const query = `
-    SELECT c.*, 
-      CASE 
-        WHEN c.created_by = ? THEN 'owner' 
-        ELSE 'member' 
-      END AS role
-    FROM communities c
-    LEFT JOIN community_members cm ON c.id = cm.community_id AND cm.user_id = ?
-    WHERE c.created_by = ? OR cm.user_id = ?
-  `;
+  try {
+    console.log(`[LOG] Récupération des communautés pour l'utilisateur ID: ${userId}`);
 
-  db.all(query, [userId, userId, userId, userId], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: 'Erreur lors de la récupération des communautés de l\'utilisateur.' });
-    }
-    res.status(200).json(rows);
-  });
+    const query = `
+      SELECT c.*, 
+        CASE 
+          WHEN c.created_by = ? THEN 'owner' 
+          ELSE 'member' 
+        END AS role
+      FROM communities c
+       LEFT JOIN community_members cm ON c.id = cm.community_id
+      WHERE c.created_by = ? OR cm.user_id = ?
+      ORDER BY c.created_at DESC
+    `;
+
+    const communities = await db
+      .raw(query, [userId, userId, userId])
+      .then((result) => result.rows)
+      .catch((err) => {
+        console.error('[ERREUR] Erreur lors de la récupération des communautés :', err);
+        throw err;
+      });
+
+    console.log(`[LOG] ${communities.length} communautés récupérées.`);
+    res.status(200).json(communities);
+  } catch (error) {
+    console.error('[ERREUR] Erreur interne lors de la récupération des communautés :', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
 });
 
 
 
-// Route pour récupérer les messages d'un utilisateur dans une communauté spécifique
-router.get('/:userId/communities/:communityId/messages', (req, res) => {
+// 🔹 Route pour récupérer les messages d'un utilisateur dans une communauté spécifique
+router.get('/:userId/communities/:communityId/messages', async (req, res) => {
   const { userId, communityId } = req.params;
 
-  const query = `
-    SELECT * FROM messages
-    WHERE user_id = ? AND community_id = ?
-  `;
+  try {
+    console.log(`[LOG] Récupération des messages pour l'utilisateur ${userId} dans la communauté ${communityId}`);
 
-  db.all(query, [userId, communityId], (err, rows) => {
-    if (err) {
-      console.error('Erreur lors de la récupération des messages:', err);
-      return res.status(500).json({ error: 'Erreur interne du serveur' });
-    }
-    res.status(200).json(rows);
-  });
+    const query = `
+      SELECT m.*, u.username, u.profilePicture
+      FROM messages m
+      JOIN users u ON m.user_id = u.id
+      WHERE m.user_id = ? AND m.community_id = ?
+      ORDER BY m.created_at ASC
+    `;
+
+    const messages = await db
+      .raw(query, [userId, communityId])
+      .then((result) => result.rows)
+      .catch((err) => {
+        console.error('[ERREUR] Erreur lors de la récupération des messages :', err);
+        throw err;
+      });
+
+    console.log(`[LOG] ${messages.length} messages récupérés pour la communauté ${communityId}.`);
+    res.status(200).json(messages);
+  } catch (error) {
+    console.error('[ERREUR] Erreur interne lors de la récupération des messages :', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
 });
-
 
 
 module.exports = router;

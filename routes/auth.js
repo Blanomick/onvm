@@ -1,134 +1,159 @@
-
-
 const express = require('express');
 const bcrypt = require('bcryptjs');
-
 const jwt = require('jsonwebtoken');
-const db = require('../db'); // Connexion à la base de données SQLite
+const db = require('../db'); // Connexion à PostgreSQL
 const router = express.Router();
 
+const JWT_SECRET = process.env.JWT_SECRET || "wgzfjViViKh1FxKH03Nx13qQO45Oenq89FZ8QB/WqTo";
 
-
-
-
-
-// Gestion des erreurs globales pour la base de données
-db.on('error', (err) => {
-  console.error(`[ERREUR] Connexion à la base de données : ${err.message}`);
-});
-
-const JWT_SECRET = process.env.JWT_SECRET || 'onvm_secret_key';
-
-
-
-// Créer un jeton JWT
+// 🔹 Fonction pour créer un jeton JWT sécurisé
 const createToken = (user) => {
-  return jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
-    expiresIn: '7d', // Le jeton expire en 7 jours
-  });
+    return jwt.sign(
+        { id: user.id, email: user.email, username: user.username },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+    );
 };
 
-// Inscription d'un nouvel utilisateur
+// 🔹 INSCRIPTION D'UN UTILISATEUR
 router.post('/register', async (req, res) => {
-  const { username, email, password } = req.body;
+    try {
+        const { username, email, password } = req.body;
 
-  if (!username || !email || !password) {
-    return res.status(400).json({ message: 'Tous les champs sont requis.' });
-  }
-
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-
-    db.run(
-      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-      [username, email, hashedPassword],
-      function (err) {
-        if (err) {
-          if (err.message.includes('UNIQUE constraint failed')) {
-            return res.status(400).json({ message: 'Cet email ou nom existe déjà.' });
-          }
-          console.error('Erreur lors de l\'inscription :', err);
-          return res.status(500).json({ message: 'Erreur serveur.' });
+        if (!username || !email || !password) {
+            return res.status(400).json({ message: 'Tous les champs sont requis.' });
         }
 
-        const newUser = {
-          id: this.lastID,
-          username,
-          email,
-          profilePicture: 'https://onvm.org/uploads/default-profile.png',
-        };
+        // Vérifier si l'utilisateur existe déjà
+        const checkUser = await db('users')
+            .where('email', email)
+            .orWhere('username', username)
+            .first();
+            
+        if (checkUser) {
+            return res.status(400).json({ message: 'Cet email ou nom d’utilisateur existe déjà.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Insérer l'utilisateur
+        const [newUser] = await db('users')
+            .insert({
+                username,
+                email,
+                password: hashedPassword,
+                profilePicture: 'https://onvm.org/uploads/default-profile.png'
+            })
+            .returning(['id', 'username', 'email', 'profilePicture']);
 
         const token = createToken(newUser);
         res.status(201).json({ message: 'Utilisateur inscrit avec succès.', user: newUser, token });
-      }
-    );
-  } catch (error) {
-    console.error('Erreur lors de l\'inscription :', error);
-    res.status(500).json({ message: 'Erreur serveur.' });
-  }
+
+    } catch (error) {
+        console.error('[ERREUR] Inscription échouée :', error.stack);
+        res.status(500).json({ message: 'Erreur serveur.', error: error.stack });
+    }
 });
 
-// Connexion d'un utilisateur
-router.post('/login', (req, res) => {
-  const { email, password } = req.body;
+// 🔹 CONNEXION D'UN UTILISATEUR
+router.post('/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ message: 'Email et mot de passe requis.' });
-  }
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Email et mot de passe requis.' });
+        }
 
-  db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
-    if (err) {
-      console.error('Erreur lors de la connexion :', err);
-      return res.status(500).json({ message: 'Erreur serveur.' });
+        // Récupérer l'utilisateur
+        const user = await db('users').where({ email }).first();
+        if (!user) {
+            return res.status(404).json({ message: 'Utilisateur non trouvé.' });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Mot de passe incorrect.' });
+        }
+
+        const token = createToken(user);
+        delete user.password; // Supprimer le mot de passe avant d'envoyer la réponse
+
+        res.status(200).json({ message: 'Connexion réussie.', user, token });
+
+    } catch (error) {
+        console.error("[ERREUR] Connexion échouée :", error);
+        res.status(500).json({ message: 'Erreur serveur.', error: error.stack });
     }
-
-    if (!user) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Mot de passe incorrect.' });
-    }
-
-    const token = createToken(user);
-    delete user.password; // Ne pas renvoyer le mot de passe
-
-    res.status(200).json({ message: 'Connexion réussie.', user, token });
-  });
 });
 
-// Middleware de vérification du jeton
+// 🔹 MIDDLEWARE DE VÉRIFICATION DU TOKEN
 const verifyToken = (req, res, next) => {
-  const token = req.header('Authorization')?.replace('Bearer ', '');
+    try {
+        const token = req.header('Authorization')?.replace('Bearer ', '');
 
-  if (!token) {
-    return res.status(403).json({ message: 'Accès refusé, jeton manquant.' });
-  }
+        if (!token) {
+            return res.status(403).json({ message: 'Accès refusé, jeton manquant.' });
+        }
 
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(401).json({ message: 'Jeton invalide.' });
+        jwt.verify(token, JWT_SECRET, (err, decoded) => {
+            if (err) {
+                return res.status(401).json({ message: 'Jeton invalide.' });
+            }
+            req.user = decoded;
+            next();
+        });
+
+    } catch (error) {
+        console.error("[ERREUR] Vérification du token échouée :", error);
+        res.status(500).json({ message: 'Erreur serveur.', error: error.message });
     }
-    req.user = decoded;
-    next();
-  });
 };
 
-// Route pour obtenir les infos de l'utilisateur connecté
-router.get('/me', verifyToken, (req, res) => {
-  db.get('SELECT id, username, email, profilePicture FROM users WHERE id = ?', [req.user.id], (err, user) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur serveur.' });
+// 🔹 RÉCUPÉRATION DES INFORMATIONS DE L'UTILISATEUR CONNECTÉ
+router.get('/me', verifyToken, async (req, res) => {
+    try {
+        const user = await db('users')
+            .select('id', 'username', 'email', 'profilePicture')
+            .where({ id: req.user.id })
+            .first();
+
+        if (!user) {
+            return res.status(404).json({ message: 'Utilisateur non trouvé.' });
+        }
+
+        res.status(200).json(user);
+    } catch (error) {
+        console.error("[ERREUR] Erreur lors de la récupération de l'utilisateur :", error);
+        res.status(500).json({ message: 'Erreur serveur.', error: error.message });
     }
-    if (!user) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
-    }
-    res.status(200).json(user);
-  });
 });
 
-// Export du routeur pour être utilisé dans server.js
+// 🔹 RÉINITIALISATION DU MOT DE PASSE
+router.post('/reset-password', async (req, res) => {
+    try {
+        const { email, newPassword } = req.body;
+
+        if (!email || !newPassword) {
+            return res.status(400).json({ message: 'Email et nouveau mot de passe requis.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        const updated = await db('users')
+            .where({ email })
+            .update({ password: hashedPassword })
+            .returning(['id']);
+
+        if (!updated || updated.length === 0) {
+            return res.status(404).json({ message: 'Utilisateur non trouvé.' });
+        }
+
+        res.status(200).json({ message: 'Mot de passe mis à jour avec succès.' });
+
+    } catch (error) {
+        console.error("[ERREUR] Erreur lors de la réinitialisation du mot de passe :", error);
+        res.status(500).json({ message: 'Erreur serveur.', error: error.message });
+    }
+});
+
+// 🔹 EXPORT DU ROUTEUR
 module.exports = router;

@@ -24,47 +24,75 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// **🔹 Route pour récupérer les stories actives (moins de 24h)**
-router.get('/', (req, res) => {
-  const query = `
-    SELECT stories.*, users.username, users.profilePicture
-    FROM stories
-    JOIN users ON stories.userId = users.id
-    WHERE stories.created_at >= datetime('now', '-1 day') 
-    ORDER BY stories.created_at DESC
-  `;
 
-  db.all(query, [], (err, rows) => {
-    if (err) {
-      console.error('[ERREUR] Erreur lors de la récupération des stories :', err);
-      return res.status(500).json({ message: 'Erreur serveur lors de la récupération des stories.' });
-    }
 
-    console.log(`[LOG] ${rows.length} stories récupérées.`);
-    res.status(200).json(rows);
-  });
+
+// 🔹 Route pour récupérer toutes les stories
+router.get('/', async (req, res) => {
+  try {
+    const query = `
+      SELECT stories.*, users.username, users.profilePicture 
+      FROM stories
+      JOIN users ON stories.userId = users.id
+      ORDER BY stories.created_at DESC
+    `;
+
+    const stories = await db
+      .raw(query)
+      .then((result) => {
+        console.log(`[LOG] ${result.rows.length} stories récupérées.`);
+        return result.rows;
+      })
+      .catch((err) => {
+        console.error('[ERREUR] Erreur lors de la récupération des stories :', err);
+        throw err;
+      });
+
+    res.status(200).json(stories);
+  } catch (error) {
+    console.error('[ERREUR] Erreur serveur lors de la récupération des stories :', error);
+    res.status(500).json({ message: 'Erreur serveur lors de la récupération des stories.' });
+  }
 });
 
-// **🔹 Route pour récupérer les stories d'un utilisateur spécifique**
-router.get('/user/:userId', (req, res) => {
-  const { userId } = req.params;
-
-  const query = `
-    SELECT * FROM stories 
-    WHERE userId = ? AND created_at >= datetime('now', '-1 day')
-    ORDER BY created_at DESC
-  `;
-
-  db.all(query, [userId], (err, rows) => {
-    if (err) {
-      console.error(`[ERREUR] Impossible de récupérer les stories de l'utilisateur ${userId}:`, err);
-      return res.status(500).json({ message: 'Erreur serveur.' });
+// 🔹 Route pour récupérer les stories d'un utilisateur spécifique
+router.get('/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (!userId || isNaN(userId)) {
+      return res.status(400).json({ message: 'ID utilisateur invalide.' });
     }
 
-    console.log(`[LOG] ${rows.length} stories trouvées pour l'utilisateur ${userId}.`);
-    res.status(200).json(rows);
-  });
+    const query = `
+      SELECT stories.*, users.username, users.profilePicture 
+      FROM stories
+      JOIN users ON stories.userId = users.id
+      WHERE stories.userId = ? 
+      AND stories.created_at >= NOW() - INTERVAL '1 day'
+      ORDER BY stories.created_at DESC
+    `;
+
+    const userStories = await db
+      .raw(query, [userId])
+      .then((result) => {
+        console.log(`[LOG] ${result.rows.length} stories trouvées pour l'utilisateur ${userId}.`);
+        return result.rows;
+      })
+      .catch((err) => {
+        console.error(`[ERREUR] Impossible de récupérer les stories de l'utilisateur ${userId} :`, err);
+        throw err;
+      });
+
+    res.status(200).json(userStories);
+  } catch (error) {
+    console.error(`[ERREUR] Erreur serveur lors de la récupération des stories de l'utilisateur ${req.params.userId} :`, error);
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
 });
+
+
+  
+
 
 // **🔹 Route pour ajouter une story (texte, image, vidéo ou mention)**
 router.post('/', upload.single('media'), (req, res) => {

@@ -20,15 +20,16 @@ const isAdmin = (req, res, next) => {
 };
 
 // Route pour récupérer tous les utilisateurs
-router.get('/users', isAdmin, (req, res) => {
+router.get('/users', isAdmin, async (req, res) => {
   console.log('[LOG] Récupération des utilisateurs par un administrateur');
-  db.all('SELECT * FROM users', [], (err, rows) => {
-    if (err) {
-      console.error('[ERREUR] Erreur lors de la récupération des utilisateurs :', err);
-      return res.status(500).json({ message: 'Erreur lors de la récupération des utilisateurs.' });
-    }
-    res.json(rows);
-  });
+  
+  try {
+    const result = await db.raw('SELECT * FROM users'); // Exécute la requête avec Knex
+    res.json(result.rows); // PostgreSQL renvoie les résultats dans `rows`
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de la récupération des utilisateurs :', err);
+    res.status(500).json({ message: 'Erreur lors de la récupération des utilisateurs.' });
+  }
 });
 
 // Route pour supprimer un utilisateur
@@ -45,16 +46,18 @@ router.delete('/users/:id', isAdmin, (req, res) => {
 });
 
 // Route pour récupérer toutes les publications
-router.get('/publications', isAdmin, (req, res) => {
+router.get('/publications', isAdmin, async (req, res) => {
   console.log('[LOG] Récupération des publications par un administrateur');
-  db.all('SELECT * FROM publications', [], (err, rows) => {
-    if (err) {
-      console.error('[ERREUR] Erreur lors de la récupération des publications :', err);
-      return res.status(500).json({ message: 'Erreur lors de la récupération des publications.' });
-    }
-    res.json(rows);
-  });
+
+  try {
+    const result = await db.raw('SELECT * FROM publications'); // Exécute la requête avec Knex
+    res.json(result.rows); // PostgreSQL stocke les résultats dans `rows`
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de la récupération des publications :', err);
+    res.status(500).json({ message: 'Erreur lors de la récupération des publications.' });
+  }
 });
+
 
 // Route pour supprimer une publication
 router.delete('/publications/:id', isAdmin, (req, res) => {
