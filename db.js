@@ -3,8 +3,8 @@ const knex = require('knex');
 
 
 // URL de connexion PostgreSQL
-const connectionString =                     
-  "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
+const connectionString = process.env.DATABASE_URL || 
+  "postgresql://onvmapp_user:Q06C7coVftWxOkO6TL9hbHIBjY5A1do9@dpg-cv3fpql2ng1s73800avg-a.oregon-postgres.render.com/onvmapp";
 
 // Vérification si l'URL de connexion est définie
 if (!connectionString) {
@@ -41,42 +41,31 @@ const db = knex({
   }
 })();
 
-
-// Vérification de la connexion à la base de données
+// Vérification unique de la connexion à PostgreSQL
 (async () => {
   try {
-    console.log('[INFO] Test de connexion à la base de données PostgreSQL...');
-    await db.raw('SELECT 1'); // Vérifie si la connexion est valide
+    await db.raw('SELECT 1');
     console.log('[INFO] Connexion réussie à la base de données PostgreSQL.');
-
-    // Vérifier si la colonne publicationId existe bien dans la table retweets
-    const result = await db.raw("SELECT column_name FROM information_schema.columns WHERE table_name = 'retweets'");
-    console.log("[INFO] Colonnes de la table retweets :", result.rows);
   } catch (error) {
-    console.error('[ERREUR CRITIQUE] Échec de connexion à la base de données PostgreSQL.');
-    console.error(`[DÉTAILS] ${error.message}`);
-    console.error('[ACTIONS] Vérifiez que l\'URL de connexion est correcte et que la base de données est accessible.');
-    process.exit(1); // Arrête l'application si la connexion échoue
+    console.error('[ERREUR CRITIQUE] Échec de connexion à PostgreSQL.', error.message);
+    process.exit(1);
   }
 })();
 
 
-
-// Vérification de la connexion à la base de données
+// Vérifier la structure des colonnes dans la table follows
 (async () => {
   try {
-    console.log('[INFO] Test de connexion à la base de données PostgreSQL...');
-    await db.raw('SELECT 1'); // Vérifie si la connexion est valide
-    console.log('[INFO] Connexion réussie à la base de données PostgreSQL.');
+    const columns = await db.raw(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'follows'
+    `);
+    console.log("[INFO] Colonnes actuelles de la table follows :", columns.rows);
   } catch (error) {
-    console.error('[ERREUR CRITIQUE] Échec de connexion à la base de données PostgreSQL.');
-    console.error(`[DÉTAILS] ${error.message}`);
-    console.error('[ACTIONS] Vérifiez que l\'URL de connexion est correcte et que la base de données est accessible.');
-    process.exit(1); // Arrête l'application si la connexion échoue
+    console.error("[ERREUR] Impossible de récupérer les colonnes de follows :", error.message);
   }
 })();
-
-
 
 
 
