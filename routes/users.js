@@ -155,13 +155,80 @@ router.get('/:id/following-list', async (req, res) => {
 router.get('/:id/followers', async (req, res) => {
   const userId = req.params.id;
   try {
-    const result = await db('follows').count('* as totalFollowers').where({ followingId: userId }).first();
+    const result = await db('follows')
+    .count('* as count')
+    .whereRaw('followerid = ? AND followingid = ?', [followerId, followingId])
+    .first();
+  
     res.status(200).json({ totalFollowers: result.totalFollowers });
   } catch (err) {
     console.error("[ERREUR] Erreur lors de la récupération des abonnés :", err);
     res.status(500).json({ message: 'Erreur lors de la récupération des abonnés.' });
   }
 });
+
+
+
+router.get('/:id/publications', async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const query = `
+      SELECT p.id, p.content, p.media, p.created_at, u.username, u.profilePicture,
+             CASE 
+               WHEN r."userId" IS NOT NULL THEN true 
+               ELSE false 
+             END AS isRetweeted,
+             ru.username AS retweeterUsername
+      FROM publications p
+      JOIN users u ON p."userId" = u.id
+      LEFT JOIN retweets r ON r."publicationId" = p.id AND r."userId" = ?
+      LEFT JOIN users ru ON r."userId" = ru.id
+      WHERE p."userId" = ? OR r."userId" = ?
+      ORDER BY p.created_at DESC;
+    `;
+
+    const publications = await db.raw(query, [userId, userId, userId]);
+
+    res.status(200).json(publications.rows);
+  } catch (error) {
+    console.error('[ERREUR] Impossible de récupérer les publications et retweets:', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
+});
+
+
+
+// 🔹 Route pour vérifier si un utilisateur suit un autre utilisateur
+
+router.get('/:id/is-following', async (req, res) => {
+  try {
+    const { followerId } = req.query;
+    const { id: followingId } = req.params;
+
+    console.log(`[DEBUG] Vérification de suivi : followerId=${followerId}, followingId=${followingId}`);
+
+    if (!followerId || !followingId) {
+      console.error('[ERREUR] Paramètres manquants : followerId ou followingId');
+      return res.status(400).json({ error: 'IDs invalides' });
+    }
+
+    const result = await db('follows')
+      .count('* as count')
+      .whereRaw('"followerId" = ? AND "followingId" = ?', [followerId, followingId])
+      .first();
+
+    console.log(`[DEBUG] Résultat de la requête :`, result);
+
+    res.json({ isFollowing: result.count > 0 });
+  } catch (error) {
+    console.error('[ERREUR] Impossible de vérifier le suivi:', error);
+    res.status(500).json({ error: 'Erreur serveur', details: error.message });
+  }
+});
+
+
+
 
 
 // Route pour mettre à jour la biographie de l'utilisateur
@@ -343,7 +410,7 @@ router.get('/:id/publications', async (req, res) => {
      SELECT p.id, p.content, p.media, p.created_at, u.username, u.profilePicture
 FROM publications p
 JOIN users u ON p."userId" = u.id
-WHERE p."userId" = ?
+WHERE p.userId = ?
 ORDER BY p.created_at DESC
 
     `;

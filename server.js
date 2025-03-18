@@ -48,7 +48,7 @@ app.use(express.urlencoded({ extended: true }));
 
 
 // Définir directement les variables importantes dans le fichier
-const DATABASE_URL = "postgresql://onvm_postgres_user:L5VFq21f0JvSbhTQ6Z6JUdXnn08JiXjk@dpg-cuc1jqjv2p9s73d0jua0-a.oregon-postgres.render.com/onvm_postgres";
+const DATABASE_URL =  "postgresql://onvmapp_user:Q06C7coVftWxOkO6TL9hbHIBjY5A1do9@dpg-cv3fpql2ng1s73800avg-a.oregon-postgres.render.com/onvmapp";
 const JWT_SECRET = "wgzfjViViKh1FxKH03Nx13qQO45Oenq89FZ8QB/WqTo";
 const PORT = process.env.PORT || 5000;
 
@@ -69,7 +69,9 @@ if (!JWT_SECRET) {
   process.exit(1); // Arrête le processus si le secret JWT est manquant
 }
 
-// Configuration de Knex avec la base de données PostgreSQL
+// Configuration de Knex avec la base d
+// 
+PostgreSQL
 const db = knex({
   client: 'pg',
   connection: {
@@ -77,12 +79,12 @@ const db = knex({
     ssl: { rejectUnauthorized: false },
   },
   pool: {
-    min: 0,
-    max: 10, // Augmentez si nécessaire
-    acquireTimeoutMillis: 60000, // Temps pour établir une connexion
-    idleTimeoutMillis: 60000, // Temps avant de fermer une connexion inactive
-    reapIntervalMillis: 2000, // Vérifie les connexions toutes les 2 secondes
+    min: 1, // Minimum de connexions toujours ouvertes
+    max: 5, // Limite les connexions simultanées pour éviter les coupures
+    acquireTimeoutMillis: 30000, // Attente max de 30s avant timeout
+    idleTimeoutMillis: 10000, // Ferme les connexions inactives après 10s
   },
+
 });
 
 // Fonction pour tester la connexion à la base de données

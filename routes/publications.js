@@ -164,10 +164,7 @@ if (!publication) {
 }
 
 
-    if (publication.length === 0) {
-      console.error('[ERREUR] La publication avec id', publicationId, 'n\'existe pas.');
-      return res.status(404).json({ message: 'Publication introuvable.' });
-    }
+  
 
     // Vérification si l'utilisateur a déjà retweeté cette publication
     const existingRetweet = await db('retweets')
@@ -197,12 +194,31 @@ res.status(200).json({ message: 'Retweet ajouté avec succès.', id: newRetweet[
   }
 });
 
+router.get('/', async (req, res) => {
+  try {
+    const publications = await db.raw(`
+      SELECT p.id, p.content, p.media, p.created_at, u.username, u.profilePicture,
+             (SELECT COUNT(*) FROM likes WHERE publicationId = p.id) AS likeCount,
+             (SELECT COUNT(*) FROM retweets WHERE publicationId = p.id) AS retweetCount
+      FROM publications p
+      JOIN users u ON p.userId = u.id
+      ORDER BY p.created_at DESC;
+    `);
+
+    res.status(200).json(publications.rows);
+  } catch (error) {
+    console.error('[ERREUR] Impossible de récupérer les publications avec likes et retweets:', error);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
+});
+
   
 
 // Ajout de commentaire pour une publication avec support de différents types de médias (audio, image, vidéo)
 
 // Ajouter une réponse à un commentaire
-router.post('/comments/:commentId/reply', (req, res) => {
+// Ajouter une réponse à un commentaire
+router.post('/comments/:commentId/reply', async (req, res) => {
   const { commentId } = req.params;
   const { userId, reply } = req.body;
 
@@ -210,15 +226,20 @@ router.post('/comments/:commentId/reply', (req, res) => {
     return res.status(400).json({ message: 'Les champs userId et reply sont obligatoires.' });
   }
 
-  const query = 'INSERT INTO replies (userId, commentId, reply) VALUES (?, ?, ?)';
-  db.run(query, [userId, commentId, reply], function (err) {
-    if (err) {
-      console.error('[ERREUR] Erreur lors de l\'ajout de la réponse :', err);
-      return res.status(500).json({ message: 'Erreur lors de l\'ajout de la réponse.' });
-    }
-    res.status(200).json({ message: 'Réponse ajoutée avec succès.', id: this.lastID });
-  });
+  try {
+    // Insérer la réponse dans la base de données
+    const [newReply] = await db('replies')
+      .insert({ userId, commentId, reply })
+      .returning(['id']);
+
+    res.status(200).json({ message: 'Réponse ajoutée avec succès.', id: newReply.id });
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de l\'ajout de la réponse :', err);
+    res.status(500).json({ message: 'Erreur lors de l\'ajout de la réponse.', error: err.message });
+  }
 });
+
+  
 
 // Liker une publication
 
