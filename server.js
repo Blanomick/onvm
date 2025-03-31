@@ -48,15 +48,37 @@ app.use(express.urlencoded({ extended: true }));
 
 
 // Définir directement les variables importantes dans le fichier
-const DATABASE_URL =  "postgresql://onvmapp_user:Q06C7coVftWxOkO6TL9hbHIBjY5A1do9@dpg-cv3fpql2ng1s73800avg-a.oregon-postgres.render.com/onvmapp";
-const JWT_SECRET = "wgzfjViViKh1FxKH03Nx13qQO45Oenq89FZ8QB/WqTo";
+require('dotenv').config(); // Charge les variables d'environnement
+
+const NODE_ENV = process.env.NODE_ENV || 'development'; // Définit l'environnement
+
+// Choix de la base de données selon l'environnement
+const DATABASE_URL = NODE_ENV === 'production' ? process.env.DATABASE_URL_PROD : process.env.DATABASE_URL_LOCAL;
+const JWT_SECRET = process.env.JWT_SECRET || "monSuperSecret123"; // Remplace par une vraie clé secrète
 const PORT = process.env.PORT || 5000;
 
-// Afficher les valeurs des variables pour vérifier leur chargement
+// Logs pour vérifier les valeurs des variables d'environnement
+console.log(`[INFO] Environnement : ${NODE_ENV}`);
 console.log(`[INFO] DATABASE_URL : ${DATABASE_URL}`);
-console.log(`[INFO] JWT_SECRET : ${JWT_SECRET}`);
 console.log(`[INFO] PORT : ${PORT}`);
-console.log('[INFO] Utilisation de l\'URL de base de données codée en dur.');
+
+if (!DATABASE_URL) {
+  console.error('[ERREUR] L\'URL de la base de données n\'est pas définie.');
+  process.exit(1);
+}
+
+if (!JWT_SECRET) {
+  console.error('[ERREUR] Le secret JWT n\'est pas défini.');
+  process.exit(1);
+}
+
+
+// Afficher les valeurs des variables pour vérifier leur chargement
+console.log(`[INFO] Environnement : ${NODE_ENV}`);
+console.log(`[INFO] Connexion à la base de données en mode ${NODE_ENV}`);
+console.log(`[INFO] PORT utilisé : ${PORT}`);
+
+
 
 // Vérifications des variables critiques
 if (!DATABASE_URL) {
@@ -71,21 +93,20 @@ if (!JWT_SECRET) {
 
 // Configuration de Knex avec la base d
 // 
-PostgreSQL
+
 const db = knex({
   client: 'pg',
-  connection: {
-    connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-  },
+  connection: NODE_ENV === 'production' 
+    ? { connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } } 
+    : { connectionString: DATABASE_URL },
   pool: {
-    min: 1, // Minimum de connexions toujours ouvertes
-    max: 5, // Limite les connexions simultanées pour éviter les coupures
-    acquireTimeoutMillis: 30000, // Attente max de 30s avant timeout
-    idleTimeoutMillis: 10000, // Ferme les connexions inactives après 10s
+    min: 1,
+    max: 5,
+    acquireTimeoutMillis: 30000,
+    idleTimeoutMillis: 10000,
   },
-
 });
+
 
 // Fonction pour tester la connexion à la base de données
 const testDatabaseConnection = async () => {
@@ -204,7 +225,7 @@ db.raw('SELECT 1')
     try {
       console.log(`[INFO] Serveur démarré sur http://localhost:${PORT}`);
       console.log('[INFO] Initialisation de la base de données...');
-      await initializeDatabase();
+     // await initializeDatabase();
       console.log('[INFO] Base de données initialisée avec succès.');
     } catch (err) {
       console.error(`[ERREUR] Problème lors de l'initialisation : ${err.message}`);
@@ -343,7 +364,7 @@ io.on('connection', (socket) => {
 });
 
 
-
+/*
  // Fonction pour vérifier et créer les tables dans la base de données
 const initializeDatabase = async () => {
   try {
@@ -489,7 +510,10 @@ const initializeDatabase = async () => {
     throw err; // Relance l'erreur pour arrêter l'initialisation en cas d'échec critique
   }
 };
+*/
 
+
+/*
 // Test de connexion et initialisation des tables
 (async () => {
   try {
@@ -505,6 +529,7 @@ const initializeDatabase = async () => {
     process.exit(1); // Arrête le serveur si l'initialisation échoue
   }
 })();
+*/
 
 // Gestion des erreurs globales pour la base de données
 db.on('error', (err) => {

@@ -1,0 +1,4 @@
+2025-03-21 23:20:52.127 GMT [13140] LOG:  redirecting log output to logging collector process
+2025-03-21 23:20:52.127 GMT [13140] HINT:  Future log output will appear in directory "log".
+2025-03-21 23:45:44.002 GMT [12180] LOG:  redirecting log output to logging collector process
+2025-03-21 23:45:44.002 GMT [12180] HINT:  Future log output will appear in directory "log".

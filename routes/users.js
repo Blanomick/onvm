@@ -430,44 +430,7 @@ ORDER BY p.created_at DESC
   }
 });
 
-// 🔹 Route GET pour récupérer les retweets d'un utilisateur
-router.get('/:id/retweets', async (req, res) => {
-  try {
-    const userId = req.params.id;
 
-    if (!userId) {
-      return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
-    }
-
-    
-
-    const query = `
-   SELECT p.id, p.content, p.media, p.created_at, u.username AS originalPoster, u.profilePicture,
-       r."userId" AS retweeterId, ru.username AS retweeterUsername, ru.profilePicture AS retweeterProfile
-FROM retweets r
-JOIN publications p ON r."publicationId" = p.id
-JOIN users u ON p."userId" = u.id
-JOIN users ru ON r."userId" = ru.id
-WHERE r."userId" = ?
-ORDER BY r.created_at DESC;
-
-`;
-
-
-    const retweets = await db
-      .raw(query, [userId])
-      .then((result) => result.rows)
-      .catch((err) => {
-        console.error('[ERREUR] Erreur lors de la récupération des retweets :', err);
-        throw err;
-      });
-
-    res.status(200).json({ retweets });
-  } catch (error) {
-    console.error('[ERREUR] Erreur interne du serveur lors de la récupération des retweets :', error);
-    res.status(500).json({ message: 'Erreur interne du serveur.' });
-  }
-});
 
 // Route DELETE pour supprimer un retweet par publicationId et userId
 router.delete('/retweets/:publicationId/:userId', (req, res) => {
@@ -633,6 +596,34 @@ router.get('/:userId/communities/:communityId/messages', async (req, res) => {
   } catch (error) {
     console.error('[ERREUR] Erreur interne lors de la récupération des messages :', error);
     res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
+});
+
+
+
+// Route pour récupérer les retweets d’un utilisateur
+router.get('/:id/retweets', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const retweets = await db('retweets')
+      .join('publications', 'retweets.publicationId', 'publications.id')
+      .join('users', 'publications.userId', 'users.id')
+      .select(
+        'publications.id',
+        'publications.content',
+        'publications.media',
+        'publications.created_at',
+        'users.username',
+        'users.profilePicture'
+      )
+      .where('retweets.userId', id)
+      .orderBy('retweets.created_at', 'desc');
+
+    res.status(200).json(retweets);
+  } catch (error) {
+    console.error('[ERREUR] Impossible de récupérer les retweets :', error);
+    res.status(500).json({ message: 'Erreur serveur lors de la récupération des retweets.' });
   }
 });
 

@@ -1,10 +1,26 @@
 const knex = require('knex');
 
+require('dotenv').config();
 
 
 // URL de connexion PostgreSQL
-const connectionString = process.env.DATABASE_URL || 
-  "postgresql://onvmapp_user:Q06C7coVftWxOkO6TL9hbHIBjY5A1do9@dpg-cv3fpql2ng1s73800avg-a.oregon-postgres.render.com/onvmapp";
+
+// Détection de l'environnement
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Sélection de la bonne base de données
+
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
+const connectionString = NODE_ENV === 'production'
+  ? process.env.DATABASE_URL_PROD
+  : process.env.DATABASE_URL_LOCAL;
+
+const connectionConfig = NODE_ENV === 'production'
+  ? { connectionString, ssl: { rejectUnauthorized: false } }
+  : { connectionString };
+
+
 
 // Vérification si l'URL de connexion est définie
 if (!connectionString) {
@@ -15,18 +31,17 @@ if (!connectionString) {
 console.log('[INFO] Tentative de connexion à la base de données PostgreSQL...');
 
 // Configuration de Knex avec PostgreSQL
+
+
 const db = knex({
   client: 'pg',
-  connection: {
-    connectionString: connectionString, // URL de connexion correcte
-    ssl: { rejectUnauthorized: false }, // Active SSL pour Render
-  },
+  connection: connectionConfig,
   pool: {
-    min: 2, // Minimum de connexions dans le pool
-    max: 10, // Maximum de connexions simultanées
-    acquireTimeoutMillis: 30000, // Timeout pour acquérir une connexion
-    idleTimeoutMillis: 30000, // Ferme les connexions inactives après 30s
-    reapIntervalMillis: 1000, // Vérifie les connexions inactives toutes les secondes
+    min: 2,
+    max: 10,
+    acquireTimeoutMillis: 30000,
+    idleTimeoutMillis: 30000,
+    reapIntervalMillis: 1000,
   },
 });
 
@@ -206,22 +221,16 @@ const db = knex({
       },
     ];
 
-    // Vérification et création des tables
-    for (const { name, schema } of tables) {
-      const exists = await db.schema.hasTable(name);
-      if (!exists) {
-        await db.schema.createTable(name, schema);
-        console.log(`[INFO] Table "${name}" créée avec succès.`);
-      } else {
-        console.log(`[INFO] Table "${name}" existe déjà.`);
-      }
-    }
-
     console.log('[INFO] Toutes les tables ont été vérifiées ou créées avec succès.');
   } catch (err) {
     console.error('[ERREUR] Création des tables échouée :', err.message);
     process.exit(1);
   }
 })();
+
+
+
+
+
 
 module.exports = db;

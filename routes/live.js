@@ -1,4 +1,5 @@
 const express = require('express');
+const db = require('../db'); // 🔄 Assure-toi que le chemin est correct selon ta structure
 
 module.exports = (io) => {
   const router = express.Router();
@@ -9,29 +10,24 @@ module.exports = (io) => {
   /**
    * 📌 Démarrer un direct
    */
-  router.post('/start', (req, res) => {
+  router.post('/start', async (req, res) => {
     try {
       const { userId, username, profilePicture } = req.body;
 
       if (!userId || !username) {
-        console.error('[ERREUR] Paramètres `userId` et `username` requis.');
-        return res.status(400).json({ message: 'Paramètres `userId` et `username` requis.' });
+        return res.status(400).json({ message: 'Paramètres userId et username requis.' });
       }
 
-      // Vérifier si l'utilisateur est déjà en live
       const isAlreadyLive = activeLiveUsers.some(user => user.userId === userId);
       if (!isAlreadyLive) {
         activeLiveUsers.push({ userId, username, profilePicture });
-        console.log(`[INFO] ${username} a démarré un direct.`);
-
-        // Notifier tous les utilisateurs connectés
         io.emit('notify-live', { userId, username, profilePicture });
       }
 
-      res.status(200).json({ message: 'Direct démarré', activeLiveUsers });
+      res.status(200).json({ message: 'Direct démarré.', activeLiveUsers });
     } catch (error) {
-      console.error('[ERREUR] Problème lors du démarrage du direct:', error.message);
-      res.status(500).json({ message: 'Erreur interne du serveur.' });
+      console.error('[ERREUR] start-live :', error.message);
+      res.status(500).json({ message: 'Erreur serveur.' });
     }
   });
 
@@ -42,35 +38,27 @@ module.exports = (io) => {
     try {
       const { userId } = req.body;
 
-      if (!userId) {
-        console.error('[ERREUR] Paramètre `userId` requis.');
-        return res.status(400).json({ message: 'Paramètre `userId` requis.' });
-      }
+      if (!userId) return res.status(400).json({ message: 'userId requis.' });
 
-      // Retirer l'utilisateur de la liste des lives actifs
       activeLiveUsers = activeLiveUsers.filter(user => user.userId !== userId);
-      console.log(`[INFO] Direct arrêté pour ${userId}.`);
-
-      // Notifier la fin du live
       io.emit('end-live', { userId });
 
-      res.status(200).json({ message: 'Direct arrêté', activeLiveUsers });
+      res.status(200).json({ message: 'Direct arrêté.', activeLiveUsers });
     } catch (error) {
-      console.error('[ERREUR] Problème lors de l\'arrêt du direct:', error.message);
-      res.status(500).json({ message: 'Erreur interne du serveur.' });
+      console.error('[ERREUR] stop-live :', error.message);
+      res.status(500).json({ message: 'Erreur serveur.' });
     }
   });
 
   /**
-   * 📌 Obtenir la liste des directs actifs
+   * 📌 Obtenir les lives actifs
    */
   router.get('/active', (req, res) => {
     try {
-      console.log(`[INFO] Nombre de lives actifs : ${activeLiveUsers.length}`);
       res.status(200).json({ activeLiveUsers });
     } catch (error) {
-      console.error('[ERREUR] Impossible de récupérer les utilisateurs actifs:', error.message);
-      res.status(500).json({ message: 'Erreur interne du serveur.' });
+      console.error('[ERREUR] get-active-lives :', error.message);
+      res.status(500).json({ message: 'Erreur serveur.' });
     }
   });
 
@@ -81,24 +69,16 @@ module.exports = (io) => {
     try {
       const { liveId, username, profilePicture } = req.body;
 
-      if (!liveId || !username) {
-        console.error('[ERREUR] Paramètres `liveId` et `username` requis.');
-        return res.status(400).json({ message: 'Paramètres `liveId` et `username` requis.' });
-      }
+      if (!liveId || !username) return res.status(400).json({ message: 'liveId et username requis.' });
 
       const live = activeLiveUsers.find(user => user.userId === liveId);
-      if (!live) {
-        console.warn(`[AVERTISSEMENT] Live ID ${liveId} introuvable.`);
-        return res.status(404).json({ message: 'Live introuvable.' });
-      }
+      if (!live) return res.status(404).json({ message: 'Live introuvable.' });
 
       io.emit('user-joined', { liveId, username, profilePicture });
-      console.log(`[INFO] ${username} a rejoint le live ID: ${liveId}`);
-
-      res.status(200).json({ message: 'Live rejoint avec succès.' });
+      res.status(200).json({ message: 'Live rejoint.' });
     } catch (error) {
-      console.error('[ERREUR] Problème lors de la jointure du live:', error.message);
-      res.status(500).json({ message: 'Erreur interne du serveur.' });
+      console.error('[ERREUR] join-live :', error.message);
+      res.status(500).json({ message: 'Erreur serveur.' });
     }
   });
 
@@ -109,24 +89,16 @@ module.exports = (io) => {
     try {
       const { liveId, username } = req.body;
 
-      if (!liveId || !username) {
-        console.error('[ERREUR] Paramètres `liveId` et `username` requis.');
-        return res.status(400).json({ message: 'Paramètres `liveId` et `username` requis.' });
-      }
+      if (!liveId || !username) return res.status(400).json({ message: 'liveId et username requis.' });
 
       const live = activeLiveUsers.find(user => user.userId === liveId);
-      if (!live) {
-        console.warn(`[AVERTISSEMENT] Live ID ${liveId} introuvable.`);
-        return res.status(404).json({ message: 'Live introuvable.' });
-      }
+      if (!live) return res.status(404).json({ message: 'Live introuvable.' });
 
       io.emit('user-left', { liveId, username });
-      console.log(`[INFO] ${username} a quitté le live ID: ${liveId}`);
-
-      res.status(200).json({ message: 'Live quitté avec succès.' });
+      res.status(200).json({ message: 'Live quitté.' });
     } catch (error) {
-      console.error('[ERREUR] Problème lors de la sortie du live:', error.message);
-      res.status(500).json({ message: 'Erreur interne du serveur.' });
+      console.error('[ERREUR] leave-live :', error.message);
+      res.status(500).json({ message: 'Erreur serveur.' });
     }
   });
 
