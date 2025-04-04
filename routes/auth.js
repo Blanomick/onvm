@@ -38,14 +38,16 @@ router.post('/register', async (req, res) => {
 
         // Insérer l'utilisateur
         const [newUser] = await db('users')
-            .insert({
-                username,
-                email,
-                password: hashedPassword,
-                profilePicture: 'https://onvm.org/uploads/default-profile.png'
-            })
-            .returning(['id', 'username', 'email', 'profilePicture']);
-
+        .insert({
+          username,
+          email,
+          password: hashedPassword,
+          profilePicture: 'https://onvm.org/uploads/default-profile.png',
+          bio: '',
+          isAdmin: false
+        })
+        .returning(['id', 'username', 'email', 'profilePicture']);
+      
         const token = createToken(newUser);
         res.status(201).json({ message: 'Utilisateur inscrit avec succès.', user: newUser, token });
 
