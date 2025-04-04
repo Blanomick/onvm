@@ -102,6 +102,7 @@ const db = knex({
           table.boolean('isAdmin').defaultTo(false);
         },
       },
+      
       {
         name: 'publications',
         schema: (table) => {
@@ -221,7 +222,28 @@ const db = knex({
       },
     ];
 
+
+        // 🔧 Ajout automatique des colonnes si elles n'existent pas
+        const hasIsAdmin = await db.schema.hasColumn('users', 'isAdmin');
+        if (!hasIsAdmin) {
+          await db.schema.alterTable('users', (table) => {
+            table.boolean('isAdmin').defaultTo(false);
+          });
+          console.log('[INFO] Colonne "isAdmin" ajoutée à la table "users".');
+        }
+    
+        const hasBio = await db.schema.hasColumn('users', 'bio');
+        if (!hasBio) {
+          await db.schema.alterTable('users', (table) => {
+            table.text('bio');
+          });
+          console.log('[INFO] Colonne "bio" ajoutée à la table "users".');
+        }
+    
+
     console.log('[INFO] Toutes les tables ont été vérifiées ou créées avec succès.');
+
+
   } catch (err) {
     console.error('[ERREUR] Création des tables échouée :', err.message);
     process.exit(1);
