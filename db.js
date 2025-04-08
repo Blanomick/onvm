@@ -233,6 +233,17 @@ const db = knex({
         }
     
         const hasBio = await db.schema.hasColumn('users', 'bio');
+
+        const hasProfilePicture = await db.schema.hasColumn('users', 'profilePicture');
+        if (!hasProfilePicture) {
+          await db.schema.alterTable('users', (table) => {
+            table.string('profilePicture').defaultTo('/uploads/default-profile.png');
+          });
+          console.log('[INFO] Colonne "profilePicture" ajoutée à la table "users".');
+        }
+        
+
+
         if (!hasBio) {
           await db.schema.alterTable('users', (table) => {
             table.text('bio');
