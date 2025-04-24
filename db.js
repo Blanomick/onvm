@@ -89,7 +89,11 @@ const db = knex({
   try {
     console.log('[INFO] Vérification et création des tables si nécessaire...');
 
-    const tables = [
+    const tables = [  
+
+
+
+
       {
         name: 'users',
         schema: (table) => {
@@ -222,6 +226,17 @@ const db = knex({
       },
     ];
 
+
+    for (const table of tables) {
+      const exists = await db.schema.hasTable(table.name);
+      if (!exists) {
+        await db.schema.createTable(table.name, table.schema);
+        console.log(`[INFO] Table "${table.name}" créée.`);
+      } else {
+        console.log(`[INFO] Table "${table.name}" déjà existante.`);
+      }
+    }
+    
 
         // 🔧 Ajout automatique des colonnes si elles n'existent pas
         const hasIsAdmin = await db.schema.hasColumn('users', 'isAdmin');

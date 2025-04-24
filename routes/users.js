@@ -150,22 +150,6 @@ router.get('/:id/following-list', async (req, res) => {
 });
 
 
-// Route pour récupérer le nombre de followers
-
-router.get('/:id/followers', async (req, res) => {
-  const userId = req.params.id;
-  try {
-    const result = await db('follows')
-    .count('* as count')
-    .whereRaw('followerid = ? AND followingid = ?', [followerId, followingId])
-    .first();
-  
-    res.status(200).json({ totalFollowers: result.totalFollowers });
-  } catch (err) {
-    console.error("[ERREUR] Erreur lors de la récupération des abonnés :", err);
-    res.status(500).json({ message: 'Erreur lors de la récupération des abonnés.' });
-  }
-});
 
 
 
@@ -215,7 +199,7 @@ router.get('/:id/is-following', async (req, res) => {
 
     const result = await db('follows')
       .count('* as count')
-      .whereRaw('"followerId" = ? AND "followingId" = ?', [followerId, followingId])
+      .whereRaw('"followerid" = ? AND "followingid" = ?', [followerId, followingId])
       .first();
 
     console.log(`[DEBUG] Résultat de la requête :`, result);
@@ -252,33 +236,48 @@ router.put('/:id/bio', async (req, res) => {
 
 
 
-
-// Route POST pour suivre un utilisateur
-router.post('/follow', (req, res) => {
+// ✅ Route POST corrigée pour suivre un utilisateur
+router.post('/follow', async (req, res) => {
   const { followerId, followingId } = req.body;
 
+  console.log(`[SUIVI] Requête reçue : followerId=${followerId}, followingId=${followingId}`);
+
   if (!followerId || !followingId) {
+    console.warn('[AVERTISSEMENT] Données manquantes pour suivre un utilisateur.');
     return res.status(400).json({ message: 'Les champs followerId et followingId sont requis.' });
   }
 
-  const checkQuery = 'SELECT * FROM follows WHERE followerId = ? AND followingId = ?';
-  db.get(checkQuery, [followerId, followingId], (err, row) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la vérification du suivi.' });
-    }
-    if (row) {
+  try {
+    const existingFollow = await db('follows')
+      .where({ followerid: followerId, followingid: followingId })
+      .first();
+
+    if (existingFollow) {
+      console.info(`[INFO] L'utilisateur ${followerId} suit déjà ${followingId}`);
       return res.status(400).json({ message: 'Vous suivez déjà cet utilisateur.' });
     }
 
-    const insertQuery = 'INSERT INTO follows (followerId, followingId) VALUES (?, ?)';
-    db.run(insertQuery, [followerId, followingId], (err) => {
-      if (err) {
-        return res.status(500).json({ message: 'Erreur lors du suivi de l\'utilisateur.' });
-      }
-      res.status(200).json({ message: 'Suivi réussi.' });
+    await db('follows').insert({
+      followerid: followerId,
+      followingid: followingId
     });
-  });
+
+    console.log(`[SUCCÈS] L'utilisateur ${followerId} suit maintenant ${followingId}`);
+    res.status(200).json({ message: 'Suivi réussi.' });
+  } catch (err) {
+    console.error('[ERREUR] Échec de la requête de suivi :', err);
+    res.status(500).json({ message: 'Erreur interne du serveur', details: err.message });
+  }
 });
+
+
+
+
+
+
+
+
+
 
 // Route GET pour récupérer les informations d'un utilisateur par son ID
 
@@ -449,13 +448,19 @@ router.delete('/retweets/:publicationId/:userId', (req, res) => {
   });
 });
 
-
-
 router.get('/:id/followers', async (req, res) => {
   const userId = req.params.id;
   try {
-    const result = await db('follows').count('* as totalFollowers').where({ followingId: userId }).first();
-    res.status(200).json({ totalFollowers: result.totalFollowers });
+    const result = await db('follows')
+      .count('* as totalFollowers')
+      .where({ followingid: userId }) // ⚠️ Utilisation du bon nom de colonne
+      .first();
+
+    const total = parseInt(result.totalFollowers, 10) || 0;
+
+    console.log(`[INFO] Nombre d'abonnés pour l'utilisateur ${userId} : ${total}`);
+
+    res.status(200).json({ totalFollowers: total });
   } catch (err) {
     console.error("[ERREUR] Erreur lors de la récupération des abonnés :", err);
     res.status(500).json({ message: 'Erreur lors de la récupération des abonnés.' });
@@ -464,24 +469,26 @@ router.get('/:id/followers', async (req, res) => {
 
 
 
-
-
-// Route POST pour ne plus suivre un utilisateur
-router.post('/unfollow', (req, res) => {
+// ✅ Route corrigée pour se désabonner
+router.post('/unfollow', async (req, res) => {
   const { followerId, followingId } = req.body;
 
   if (!followerId || !followingId) {
     return res.status(400).json({ message: 'Les champs followerId et followingId sont requis.' });
   }
 
-  const deleteQuery = 'DELETE FROM follows WHERE followerId = ? AND followingId = ?';
-  db.run(deleteQuery, [followerId, followingId], (err) => {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la suppression du suivi.' });
-    }
+  try {
+    await db('follows').where({ followerid: followerId, followingid: followingId }).del();
+    console.log(`[INFO] L'utilisateur ${followerId} s'est désabonné de ${followingId}`);
     res.status(200).json({ message: 'Suivi supprimé avec succès.' });
-  });
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de la suppression du suivi :', err);
+    res.status(500).json({ message: 'Erreur lors de la suppression du suivi.' });
+  }
 });
+
+
+
 
 // 🔹 Route GET pour récupérer la liste de tous les utilisateurs
 router.get('/all', async (req, res) => {
