@@ -114,8 +114,10 @@ const db = knex({
           table.integer('userId').unsigned().references('id').inTable('users').onDelete('CASCADE');
           table.text('content');
           table.string('media');
+          table.string('mediatype');
           table.integer('retweetsCount').defaultTo(0);
           table.timestamp('created_at').defaultTo(db.fn.now());
+          
         },
       },
       {
@@ -237,6 +239,15 @@ const db = knex({
       }
     }
     
+
+    const hasMediaType = await db.schema.hasColumn('publications', 'mediatype');
+if (!hasMediaType) {
+  await db.schema.alterTable('publications', (table) => {
+    table.string('mediatype');
+  });
+  console.log('[INFO] Colonne "mediatype" ajoutée à la table "publications".');
+}
+
 
         // 🔧 Ajout automatique des colonnes si elles n'existent pas
         const hasIsAdmin = await db.schema.hasColumn('users', 'isAdmin');

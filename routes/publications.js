@@ -6,6 +6,16 @@ const fs = require('fs');
 
 const router = express.Router();
 
+
+const cloudinary = require('cloudinary').v2;
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+
 // Vérification et création du répertoire 'uploads' si nécessaire
 const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
@@ -20,17 +30,39 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const safeFileName = file.originalname.replace(/\s+/g, '_').replace(/[^\w.-]/g, '');
+    
+
     cb(null, `${Date.now()}_${safeFileName}`);
   },
 });
 
+
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['image/jpeg', 'image/png', 'video/mp4', 'audio/mpeg'];
+  const allowedTypes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'video/mp4',
+    'video/quicktime',
+    'video/x-msvideo',
+    'video/webm',
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/ogg'
+  ];
+
   if (!allowedTypes.includes(file.mimetype)) {
+    console.error('[ERREUR] Type de fichier refusé :', file.mimetype);
     return cb(new Error('Type de fichier non autorisé'), false);
   }
+
   cb(null, true);
 };
+
+
+
 
 const upload = multer({
   storage,
@@ -44,19 +76,48 @@ const upload = multer({
 
 // Création de publication
 router.post('/', upload.single('media'), async (req, res) => {
-  console.log('[LOG] Données reçues:', req.body);
-  
   const { userId, content } = req.body;
-  const media = req.file ? `/uploads/${req.file.filename}` : null;
+  const file = req.file;
 
-  if (!userId || !content) {
+  if (!userId || (!content && !file)) {
     return res.status(400).json({ message: 'Les champs utilisateur et contenu sont obligatoires.' });
   }
 
+  let mediaUrl = null;
+  let mediaType = null;
+
   try {
-    const [newPublication] = await db('publications')
-      .insert({ userId, content, media })
-      .returning('id');
+    if (file) {
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (['.jpg', '.jpeg', '.png'].includes(ext)) mediaType = 'image';
+      else if (['.mp4', '.mov', '.avi', '.webm'].includes(ext)) mediaType = 'video';
+      else if (['.mp3', '.wav', '.ogg'].includes(ext)) mediaType = 'audio';
+      else return res.status(400).json({ message: 'Type de fichier non pris en charge.' });
+
+      // ✅ En production : upload vers Cloudinary
+      if (process.env.NODE_ENV === 'production') {
+        const result = await cloudinary.uploader.upload(file.path, {
+          resource_type: 'auto',
+
+          folder: 'onvm_publications',
+        });
+
+        mediaUrl = result.secure_url;
+
+        // Supprimer le fichier local temporaire
+        fs.unlinkSync(file.path);
+      } else {
+        // ✅ En local : stockage dans /uploads
+        mediaUrl = `/uploads/${file.filename}`;
+      }
+    }
+
+    const [newPublication] =
+    await db('publications')
+    .insert({ userId, content, media: mediaUrl, mediatype: mediaType })
+
+  .returning('id');
+
 
     res.status(201).json({ message: 'Publication ajoutée avec succès!', id: newPublication.id });
   } catch (err) {
@@ -72,15 +133,17 @@ router.post('/', upload.single('media'), async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const publications = await db('publications')
-      .select(
-        'publications.id',
-        'publications.userId',
-        'publications.content',
-        'publications.media',
-        'publications.created_at',
-        'users.username',
-        'users.profilePicture'
-      )
+    .select(
+      'publications.id',
+      'publications.userId',
+      'publications.content',
+      'publications.media',
+      'publications.mediatype',
+      'publications.created_at',
+      'users.username',
+      'users.profilePicture'
+    )
+    
       .leftJoin('users', 'publications.userId', 'users.id')
       .orderBy('publications.created_at', 'desc');
 
