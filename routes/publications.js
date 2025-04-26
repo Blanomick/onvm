@@ -257,23 +257,9 @@ res.status(200).json({ message: 'Retweet ajouté avec succès.', id: newRetweet[
   }
 });
 
-router.get('/', async (req, res) => {
-  try {
-    const publications = await db.raw(`
-      SELECT p.id, p.content, p.media, p.created_at, u.username, u.profilePicture,
-             (SELECT COUNT(*) FROM likes WHERE publicationId = p.id) AS likeCount,
-             (SELECT COUNT(*) FROM retweets WHERE publicationId = p.id) AS retweetCount
-      FROM publications p
-      JOIN users u ON p.userId = u.id
-      ORDER BY p.created_at DESC;
-    `);
 
-    res.status(200).json(publications.rows);
-  } catch (error) {
-    console.error('[ERREUR] Impossible de récupérer les publications avec likes et retweets:', error);
-    res.status(500).json({ message: 'Erreur interne du serveur.' });
-  }
-});
+
+
 
   
 
