@@ -112,12 +112,10 @@ router.post('/', upload.single('media'), async (req, res) => {
       }
     }
 
-    const [newPublication] =
     await db('publications')
-    .insert({ userId, content, media: mediaUrl, mediatype: mediaType })
-
-  .returning('id');
-
+    .insert({ userid: userId, content, media: mediaUrl, mediatype: mediaType })
+    .returning('id');
+  
 
     res.status(201).json({ message: 'Publication ajoutée avec succès!', id: newPublication.id });
   } catch (err) {
@@ -133,9 +131,13 @@ router.post('/', upload.single('media'), async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const publications = await db('publications')
+   
+   
+   
+   
     .select(
       'publications.id',
-      'publications.userId',
+      'publications.userid',
       'publications.content',
       'publications.media',
       'publications.mediatype',
@@ -143,9 +145,10 @@ router.get('/', async (req, res) => {
       'users.username',
       'users.profilePicture'
     )
+    .leftJoin('users', 'publications.userid', 'users.id')
     
-      .leftJoin('users', 'publications.userId', 'users.id')
-      .orderBy('publications.created_at', 'desc');
+   
+    .orderBy('publications.created_at', 'desc');
 
       await Promise.all(publications.map(async (publication) => {
         publication.comments = await getCommentsForPublication(publication.id);
@@ -231,16 +234,17 @@ if (!publication) {
 
     // Vérification si l'utilisateur a déjà retweeté cette publication
     const existingRetweet = await db('retweets')
-    .where({ userId, publicationId })
-    .first();
-  
+  .where({ userid: userId, publicationId })
+  .first();
+
   if (existingRetweet) {
     return res.status(400).json({ message: 'Vous avez déjà retweeté cette publication.' });
   }
   
   const newRetweet = await db('retweets')
-  .insert({ userId, publicationId })
+  .insert({ userid: userId, publicationId })
   .returning(['id']);
+
 
 if (!newRetweet || newRetweet.length === 0) {
   console.error('[ERREUR] Impossible d\'ajouter le retweet.');
@@ -304,17 +308,17 @@ router.post('/:publicationId/like', async (req, res) => {
     // Vérifier si l'utilisateur a déjà liké la publication
   
     const existingLike = await db('likes')
-    .where({ userId, publicationId })
+    .where({ userid: userId, publicationId })
     .first();
-  
+
   if (existingLike) {
     return res.status(400).json({ message: 'Vous avez déjà liké cette publication.' });
   }
   
-  const [newLike] = await db('likes')
-    .insert({ userId, publicationId })
-    .returning('id');
   
+const [newLike] = await db('likes')
+.insert({ userid: userId, publicationId })
+.returning('id');
 
     res.status(200).json({ message: 'Like ajouté avec succès.', id: newLike.id });
   } catch (err) {
@@ -347,9 +351,12 @@ router.delete('/:publicationId', async (req, res) => {
   }
 
   try {
+   
+
     const deletedPublication = await db('publications')
-    .where({ id: publicationId, userId })
-    .del();
+  .where({ id: publicationId, userid: userId })
+  .del();
+
   
   if (deletedPublication === 0) {
     return res.status(403).json({ message: "Vous n'êtes pas autorisé à supprimer cette publication." });
