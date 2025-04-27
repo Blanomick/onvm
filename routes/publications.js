@@ -75,6 +75,8 @@ const upload = multer({
 
 
 // Création de publication
+
+// Création de publication
 router.post('/', upload.single('media'), async (req, res) => {
   const { userId, content } = req.body;
   const file = req.file;
@@ -94,38 +96,31 @@ router.post('/', upload.single('media'), async (req, res) => {
       else if (['.mp3', '.wav', '.ogg'].includes(ext)) mediaType = 'audio';
       else return res.status(400).json({ message: 'Type de fichier non pris en charge.' });
 
-      // ✅ En production : upload vers Cloudinary
-      if (process.env.NODE_ENV === 'production') {
-        const result = await cloudinary.uploader.upload(file.path, {
-          resource_type: 'auto',
+      // 🌟 Toujours envoyer sur Cloudinary (même en local et production)
+      const result = await cloudinary.uploader.upload(file.path, {
+        resource_type: 'auto',
+        folder: 'onvm_publications',
+      });
 
-          folder: 'onvm_publications',
-        });
+      mediaUrl = result.secure_url;
 
-        mediaUrl = result.secure_url;
-
-        // Supprimer le fichier local temporaire
-        fs.unlinkSync(file.path);
-      } else {
-        // ✅ En local : stockage dans /uploads
-        mediaUrl = `/uploads/${file.filename}`;
-      }
+      // Supprimer le fichier temporaire local
+      fs.unlinkSync(file.path);
     }
 
-    const insertedPublication = await db('publications')
-    .insert({ userid: userId, content, media: mediaUrl, mediatype: mediaType })
-    .returning('id');
-    
-    const publicationId = insertedPublication?.[0]?.id || null;
-    
-    res.status(201).json({ message: 'Publication ajoutée avec succès!', id: publicationId });
-    
-  
+    const [newPublication] = await db('publications')
+      .insert({ userid: userId, content, media: mediaUrl, mediatype: mediaType })
+      .returning(['id']);
+
+    res.status(201).json({ message: 'Publication ajoutée avec succès!', id: newPublication.id });
   } catch (err) {
     console.error('[ERREUR] Erreur lors de la création de la publication:', err);
     res.status(500).json({ message: 'Erreur lors de la création de la publication.', error: err.message });
   }
 });
+
+
+
 
 
 
@@ -377,7 +372,17 @@ router.delete('/:publicationId', async (req, res) => {
 router.post('/:publicationId/comment', upload.single('media'), async (req, res) => {
   const { publicationId } = req.params;
   const { userId, comment } = req.body;
-  const media = req.file ? `/uploads/${req.file.filename}` : null;
+  let media = null;
+
+  if (req.file) {
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      resource_type: 'auto',
+      folder: 'onvm_comments',
+    });
+    media = result.secure_url;
+    fs.unlinkSync(req.file.path);
+  }
+  
 
   if (!userId || !comment) {
     return res.status(400).json({ message: 'Les champs userId et comment sont obligatoires.' });
