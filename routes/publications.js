@@ -112,12 +112,15 @@ router.post('/', upload.single('media'), async (req, res) => {
       }
     }
 
-    await db('publications')
+    const insertedPublication = await db('publications')
     .insert({ userid: userId, content, media: mediaUrl, mediatype: mediaType })
     .returning('id');
+    
+    const publicationId = insertedPublication?.[0]?.id || null;
+    
+    res.status(201).json({ message: 'Publication ajoutée avec succès!', id: publicationId });
+    
   
-
-    res.status(201).json({ message: 'Publication ajoutée avec succès!', id: newPublication.id });
   } catch (err) {
     console.error('[ERREUR] Erreur lors de la création de la publication:', err);
     res.status(500).json({ message: 'Erreur lors de la création de la publication.', error: err.message });
