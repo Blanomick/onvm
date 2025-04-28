@@ -70,43 +70,45 @@ const upload = multer({
 // Création de publication
 router.post('/', upload.single('media'), async (req, res) => {
   
-  const { userId, content, mediaType } = req.body;
 
+  const { userId, content } = req.body;
+const file = req.file;
+let mediaType = null;
 
-  const file = req.file;
+if (!userId || (!content && !file)) {
+  return res.status(400).json({ message: 'Les champs utilisateur et contenu sont obligatoires.' });
+}
 
-  if (!userId || (!content && !file)) {
-    return res.status(400).json({ message: 'Les champs utilisateur et contenu sont obligatoires.' });
+let mediaUrl = null;
+
+try {
+  if (file) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (['.jpg', '.jpeg', '.png'].includes(ext)) mediaType = 'image';
+    else if (['.mp4', '.mov', '.avi', '.webm'].includes(ext)) mediaType = 'video';
+    else if (['.mp3', '.wav', '.ogg'].includes(ext)) mediaType = 'audio';
+    else return res.status(400).json({ message: 'Type de fichier non pris en charge.' });
+
+    await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { resource_type: 'auto', folder: 'onvm_publications' },
+        (error, result) => {
+          if (error) {
+            console.error('[ERREUR] Erreur upload Cloudinary :', error);
+            return reject(error);
+          }
+          mediaUrl = result.secure_url;
+          resolve();
+        }
+      );
+      uploadStream.end(file.buffer);
+    });
   }
 
-  let mediaUrl = null;
-  
 
-  try {
-    if (file) {
-      const ext = path.extname(file.originalname).toLowerCase();
-      if (['.jpg', '.jpeg', '.png'].includes(ext)) mediaType = 'image';
-      else if (['.mp4', '.mov', '.avi', '.webm'].includes(ext)) mediaType = 'video';
-      else if (['.mp3', '.wav', '.ogg'].includes(ext)) mediaType = 'audio';
-      else return res.status(400).json({ message: 'Type de fichier non pris en charge.' });
 
-      // 🌟 Toujours envoyer sur Cloudinary (même en local et production)
-      await new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          { resource_type: 'auto', folder: 'onvm_publications' },
-          (error, result) => {
-            if (error) {
-              console.error('[ERREUR] Erreur upload Cloudinary :', error);
-              return reject(error);
-            }
-            mediaUrl = result.secure_url;
-            resolve();
-          }
-        );
-        uploadStream.end(file.buffer);
-      });
-      
-    }
+
+
 
     const [newPublication] = await db('publications')
       .insert({ userid: userId, content, media: mediaUrl, mediatype: mediaType })
