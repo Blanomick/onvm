@@ -24,17 +24,8 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // Configuration de multer pour l'upload des fichiers (photos/vidéos/vocales)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const safeFileName = file.originalname.replace(/\s+/g, '_').replace(/[^\w.-]/g, '');
-    
+const storage = multer.memoryStorage();
 
-    cb(null, `${Date.now()}_${safeFileName}`);
-  },
-});
 
 
 const fileFilter = (req, file, cb) => {
@@ -100,15 +91,21 @@ router.post('/', upload.single('media'), async (req, res) => {
       else return res.status(400).json({ message: 'Type de fichier non pris en charge.' });
 
       // 🌟 Toujours envoyer sur Cloudinary (même en local et production)
-      const result = await cloudinary.uploader.upload(file.path, {
-        resource_type: 'auto',
-        folder: 'onvm_publications',
+      await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          { resource_type: 'auto', folder: 'onvm_publications' },
+          (error, result) => {
+            if (error) {
+              console.error('[ERREUR] Erreur upload Cloudinary :', error);
+              return reject(error);
+            }
+            mediaUrl = result.secure_url;
+            resolve();
+          }
+        );
+        uploadStream.end(file.buffer);
       });
-
-      mediaUrl = result.secure_url;
-
-      // Supprimer le fichier temporaire local
-      fs.unlinkSync(file.path);
+      
     }
 
     const [newPublication] = await db('publications')
@@ -375,20 +372,34 @@ router.delete('/:publicationId', async (req, res) => {
 
 
 // Ajouter un commentaire à une publication
+
+
+
 router.post('/:publicationId/comment', upload.single('media'), async (req, res) => {
   const { publicationId } = req.params;
   const { userId, comment } = req.body;
   let media = null;
 
   if (req.file) {
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      resource_type: 'auto',
-      folder: 'onvm_comments',
-    });
-    media = result.secure_url;
-    fs.unlinkSync(req.file.path);
+    try {
+      await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          { resource_type: 'auto', folder: 'onvm_comments' },
+          (error, result) => {
+            if (error) {
+              console.error('[ERREUR] Erreur upload commentaire Cloudinary :', error);
+              return reject(error);
+            }
+            media = result.secure_url;
+            resolve();
+          }
+        );
+        uploadStream.end(req.file.buffer);
+      });
+    } catch (error) {
+      return res.status(500).json({ message: "Erreur lors de l'upload sur Cloudinary.", error: error.message });
+    }
   }
-  
 
   if (!userId || !comment) {
     return res.status(400).json({ message: 'Les champs userId et comment sont obligatoires.' });
@@ -405,6 +416,8 @@ router.post('/:publicationId/comment', upload.single('media'), async (req, res) 
     res.status(500).json({ message: 'Erreur lors de l\'ajout du commentaire.', error: err.message });
   }
 });
+
+  
 
 
 
