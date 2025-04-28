@@ -76,8 +76,9 @@ const file = req.file;
 let mediaType = null;
 
 if (!userId || (!content && !file)) {
-  return res.status(400).json({ message: 'Les champs utilisateur et contenu sont obligatoires.' });
+  return res.status(400).json({ message: 'Veuillez ajouter un texte ou un fichier média.' });
 }
+
 
 let mediaUrl = null;
 
