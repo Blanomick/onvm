@@ -78,7 +78,10 @@ const upload = multer({
 
 // Création de publication
 router.post('/', upload.single('media'), async (req, res) => {
-  const { userId, content } = req.body;
+  
+  const { userId, content, mediaType } = req.body;
+
+
   const file = req.file;
 
   if (!userId || (!content && !file)) {
@@ -86,7 +89,7 @@ router.post('/', upload.single('media'), async (req, res) => {
   }
 
   let mediaUrl = null;
-  let mediaType = null;
+  
 
   try {
     if (file) {
