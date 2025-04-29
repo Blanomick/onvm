@@ -34,6 +34,9 @@ const fileFilter = (req, file, cb) => {
     'image/jpg',
     'image/png',
     'image/webp',
+    'image/gif',      // Ajouter .gif
+    'image/svg+xml',  // Ajouter .svg
+    'image/bmp',      // Ajouter .bmp
     'video/mp4',
     'video/quicktime',
     'video/x-msvideo',
@@ -43,6 +46,7 @@ const fileFilter = (req, file, cb) => {
     'audio/wav',
     'audio/ogg'
   ];
+  
 
   if (!allowedTypes.includes(file.mimetype)) {
     console.error('[ERREUR] Type de fichier refusé :', file.mimetype);
