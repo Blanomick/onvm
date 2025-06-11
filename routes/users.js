@@ -158,12 +158,13 @@ router.get('/:id/publications', async (req, res) => {
     const userId = req.params.id;
 
     const query = `
-      SELECT p.id, p.content, p.media, p.created_at, u.username, u.profilePicture,
-             CASE 
-               WHEN r."userId" IS NOT NULL THEN true 
-               ELSE false 
-             END AS isRetweeted,
-             ru.username AS retweeterUsername
+     SELECT p.id, p.content, p.media, p.created_at, u.username, u."profilePicture",
+       CASE 
+         WHEN r."userId" IS NOT NULL THEN true 
+         ELSE false 
+       END AS isRetweeted,
+       ru.username AS retweeterUsername
+
       FROM publications p
       JOIN users u ON p."userId" = u.id
       LEFT JOIN retweets r ON r."publicationId" = p.id AND r."userId" = ?
@@ -199,7 +200,7 @@ router.get('/:id/is-following', async (req, res) => {
 
     const result = await db('follows')
       .count('* as count')
-      .whereRaw('"followerid" = ? AND "followingid" = ?', [followerId, followingId])
+      .whereRaw('"followerId" = ? AND "followingId" = ?', [followerId, followingId])
       .first();
 
     console.log(`[DEBUG] Résultat de la requête :`, result);
@@ -248,8 +249,10 @@ router.post('/follow', async (req, res) => {
   }
 
   try {
+    console.log('[DEBUG] Vérification du follow avec les bons noms de colonnes');
+
     const existingFollow = await db('follows')
-      .where({ followerid: followerId, followingid: followingId })
+      .where({ followerId: followerId, followingId: followingId })
       .first();
 
     if (existingFollow) {
@@ -258,8 +261,8 @@ router.post('/follow', async (req, res) => {
     }
 
     await db('follows').insert({
-      followerid: followerId,
-      followingid: followingId
+      followerId: followerId,
+      followingId: followingId
     });
 
     console.log(`[SUCCÈS] L'utilisateur ${followerId} suit maintenant ${followingId}`);
@@ -409,7 +412,8 @@ router.get('/:id/publications', async (req, res) => {
      SELECT p.id, p.content, p.media, p.created_at, u.username, u.profilePicture
 FROM publications p
 JOIN users u ON p."userId" = u.id
-WHERE p.userId = ?
+WHERE p."userId" = ?
+
 ORDER BY p.created_at DESC
 
     `;
@@ -453,7 +457,7 @@ router.get('/:id/followers', async (req, res) => {
   try {
     const result = await db('follows')
       .count('* as totalFollowers')
-      .where({ followingid: userId }) // ⚠️ Utilisation du bon nom de colonne
+      .where({ followingId: userId }) // ⚠️ Utilisation du bon nom de colonne
       .first();
 
     const total = parseInt(result.totalFollowers, 10) || 0;
@@ -478,7 +482,7 @@ router.post('/unfollow', async (req, res) => {
   }
 
   try {
-    await db('follows').where({ followerid: followerId, followingid: followingId }).del();
+    await db('follows').where({ followerId: followerId, followingId: followingId }).del();
     console.log(`[INFO] L'utilisateur ${followerId} s'est désabonné de ${followingId}`);
     res.status(200).json({ message: 'Suivi supprimé avec succès.' });
   } catch (err) {

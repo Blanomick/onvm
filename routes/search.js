@@ -30,10 +30,11 @@ router.get('/', async (req, res) => {
 
     // Requête pour récupérer les abonnements de l'utilisateur
     const followQuery = `
-      SELECT u.id, u.username, u.profilePicture 
-      FROM users u 
-      JOIN follows f ON f.followingId = u.id 
-      WHERE f.followerId = ?
+    SELECT u.id, u.username, u."profilePicture"
+FROM users u 
+JOIN follows f ON f."followingId" = u.id 
+WHERE f."followerId" = ?
+
     `;
 
     // Exécution de la recherche des utilisateurs

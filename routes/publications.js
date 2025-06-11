@@ -116,7 +116,8 @@ try {
 
 
     const [newPublication] = await db('publications')
-      .insert({ userid: userId, content, media: mediaUrl, mediatype: mediaType })
+      .insert({ userId: userId, content, media: mediaUrl, mediatype: mediaType })
+
       .returning(['id']);
 
     res.status(201).json({ message: 'Publication ajoutée avec succès!', id: newPublication.id });
@@ -140,17 +141,18 @@ router.get('/', async (req, res) => {
    
    
    
-    .select(
-      'publications.id',
-      'publications.userid',
-      'publications.content',
-      'publications.media',
-      'publications.mediatype',
-      'publications.created_at',
-      'users.username',
-      'users.profilePicture'
-    )
-    .leftJoin('users', 'publications.userid', 'users.id')
+        .select(
+  'publications.id',
+  'publications.userId',
+  'publications.content',
+  'publications.media',
+  'publications.mediatype',
+  'publications.created_at',
+  'users.username',
+  'users.profilePicture'
+)
+.leftJoin('users', 'publications.userId', 'users.id')
+
     
    
     .orderBy('publications.created_at', 'desc');
@@ -239,7 +241,7 @@ if (!publication) {
 
     // Vérification si l'utilisateur a déjà retweeté cette publication
     const existingRetweet = await db('retweets')
-  .where({ userid: userId, publicationId })
+  .where({ userId: userId, publicationId })
   .first();
 
   if (existingRetweet) {
@@ -247,7 +249,7 @@ if (!publication) {
   }
   
   const newRetweet = await db('retweets')
-  .insert({ userid: userId, publicationId })
+  .insert({ userId: userId, publicationId })
   .returning(['id']);
 
 
@@ -313,7 +315,7 @@ router.post('/:publicationId/like', async (req, res) => {
     // Vérifier si l'utilisateur a déjà liké la publication
   
     const existingLike = await db('likes')
-    .where({ userid: userId, publicationId })
+    .where({ userId: userId, publicationId })
     .first();
 
   if (existingLike) {
@@ -322,7 +324,7 @@ router.post('/:publicationId/like', async (req, res) => {
   
   
 const [newLike] = await db('likes')
-.insert({ userid: userId, publicationId })
+.insert({ userId: userId, publicationId })
 .returning('id');
 
     res.status(200).json({ message: 'Like ajouté avec succès.', id: newLike.id });
@@ -362,7 +364,7 @@ router.delete('/:publicationId', async (req, res) => {
    
 
     const deletedPublication = await db('publications')
-  .where({ id: publicationId, userid: userId })
+  .where({ id: publicationId, userId: userId })
   .del();
 
   
