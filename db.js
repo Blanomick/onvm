@@ -260,6 +260,16 @@ if (!hasMediaType) {
     
         const hasBio = await db.schema.hasColumn('users', 'bio');
 
+
+        const hasUserId = await db.schema.hasColumn('publications', 'userId');
+if (!hasUserId) {
+  await db.schema.alterTable('publications', (table) => {
+    table.integer('userId').unsigned().references('id').inTable('users').onDelete('CASCADE');
+  });
+  console.log('[INFO] Colonne "userId" ajoutée à la table "publications".');
+}
+
+
         const hasProfilePicture = await db.schema.hasColumn('users', 'profilePicture');
         if (!hasProfilePicture) {
           await db.schema.alterTable('users', (table) => {
