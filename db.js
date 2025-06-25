@@ -163,6 +163,8 @@ const db = knex({
           table.increments('id').primary();
           table.integer('userId').unsigned().references('id').inTable('users').onDelete('CASCADE');
           table.integer('publicationId').unsigned().references('id').inTable('publications').onDelete('CASCADE');
+           table.unique(['userId', 'publicationId']);
+
         },
       },
       {

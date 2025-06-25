@@ -135,35 +135,49 @@ try {
 // Récupération de toutes les publications avec utilisateur, photo de profil et leurs commentaires et réponses
 
 router.get('/', async (req, res) => {
+  const userId = req.query.userId; // ← pour savoir si l'utilisateur a liké
+
   try {
     const publications = await db('publications')
-   
-   
-   
-   
-        .select(
-  'publications.id',
-  'publications.userId',
-  'publications.content',
-  'publications.media',
-  'publications.mediatype',
-  'publications.created_at',
-  'users.username',
-  'users.profilePicture'
-)
-.leftJoin('users', 'publications.userId', 'users.id')
+      .select(
+        'publications.id',
+        'publications.userId',
+        'publications.content',
+        'publications.media',
+        'publications.mediatype',
+        'publications.created_at',
+        'users.username',
+        'users.profilePicture'
+      )
+      .leftJoin('users', 'publications.userId', 'users.id')
+      .orderBy('publications.created_at', 'desc');
 
-    
-   
-    .orderBy('publications.created_at', 'desc');
+    for (const publication of publications) {
+      // 1. Ajouter les commentaires
+      publication.comments = await getCommentsForPublication(publication.id);
 
-      await Promise.all(publications.map(async (publication) => {
-        publication.comments = await getCommentsForPublication(publication.id);
-        await Promise.all(publication.comments.map(async (comment) => {
-          comment.replies = await getRepliesForComment(comment.id);
-        }));
-      }));
-      
+      // 2. Ajouter les réponses
+      for (let comment of publication.comments) {
+        comment.replies = await getRepliesForComment(comment.id);
+      }
+
+      // 3. Ajouter le nombre de likes
+      const totalLikes = await db('likes')
+        .where({ publicationId: publication.id })
+        .count()
+        .first();
+      publication.likeCount = parseInt(totalLikes.count);
+
+      // 4. Vérifier si l'utilisateur a liké
+      if (userId) {
+        const userLike = await db('likes')
+          .where({ publicationId: publication.id, userId })
+          .first();
+        publication.userHasLiked = !!userLike;
+      } else {
+        publication.userHasLiked = false;
+      }
+    }
 
     res.status(200).json(publications);
   } catch (err) {
@@ -171,6 +185,7 @@ router.get('/', async (req, res) => {
     res.status(500).json({ message: 'Erreur lors de la récupération des publications.' });
   }
 });
+
 
 
 
