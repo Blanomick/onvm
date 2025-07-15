@@ -218,16 +218,49 @@ const db = knex({
           table.timestamp('joined_at').defaultTo(db.fn.now());
         },
       },
+
       {
-        name: 'messages',
-        schema: (table) => {
-          table.increments('id').primary();
-          table.integer('community_id').unsigned().references('id').inTable('communities').onDelete('CASCADE');
-          table.integer('user_id').unsigned().references('id').inTable('users').onDelete('CASCADE');
-          table.text('content').notNullable();
-          table.timestamp('timestamp').defaultTo(db.fn.now());
-        },
-      },
+  name: 'conversations',
+  schema: (table) => {
+    table.increments('id').primary();
+    table.integer('sender_id').unsigned().references('id').inTable('users').onDelete('CASCADE');
+    table.integer('receiver_id').unsigned().references('id').inTable('users').onDelete('CASCADE');
+    table.timestamp('created_at').defaultTo(db.fn.now());
+  },
+},
+
+
+
+     {
+  name: 'messages',
+  schema: (table) => {
+    table.increments('id').primary();
+    table.integer('conversation_id').unsigned().references('id').inTable('conversations').onDelete('CASCADE');
+    table.integer('community_id').unsigned().references('id').inTable('communities').onDelete('CASCADE').nullable();
+    table.integer('user_id').unsigned().references('id').inTable('users').onDelete('CASCADE');
+    table.text('content').notNullable();
+    table.timestamp('created_at').defaultTo(db.fn.now());
+
+    table.boolean('is_read').defaultTo(false); // si tu veux gérer les messages lus
+  },
+},
+
+
+
+{
+  name: 'notifications',
+  schema: (table) => {
+    table.increments('id').primary();
+    table.integer('user_id').unsigned().references('id').inTable('users').onDelete('CASCADE');
+    table.integer('sender_id').unsigned().references('id').inTable('users').onDelete('CASCADE');
+    table.string('type'); // exemple : "commentaire", "retweet", "abonnement"
+    table.text('content'); // contenu ou id cible
+    table.boolean('read').defaultTo(false);
+    table.timestamp('created_at').defaultTo(db.fn.now());
+  },
+},
+
+
     ];
 
 
@@ -251,6 +284,16 @@ if (!hasMediaType) {
 }
 
 
+// 🔄 Renommer "timestamp" → "created_at" si nécessaire
+const hasOldTimestamp = await db.schema.hasColumn('messages', 'timestamp');
+if (hasOldTimestamp) {
+  await db.schema.alterTable('messages', (table) => {
+    table.renameColumn('timestamp', 'created_at');
+  });
+  console.log('[INFO] Colonne "timestamp" renommée en "created_at" dans la table "messages".');
+}
+
+
         // 🔧 Ajout automatique des colonnes si elles n'existent pas
         const hasIsAdmin = await db.schema.hasColumn('users', 'isAdmin');
         if (!hasIsAdmin) {
@@ -263,12 +306,31 @@ if (!hasMediaType) {
         const hasBio = await db.schema.hasColumn('users', 'bio');
 
 
-        const hasUserId = await db.schema.hasColumn('publications', 'userId');
-if (!hasUserId) {
-  await db.schema.alterTable('publications', (table) => {
-    table.integer('userId').unsigned().references('id').inTable('users').onDelete('CASCADE');
+       const hasConversationId = await db.schema.hasColumn('messages', 'conversation_id');
+
+const hasCreatedAt = await db.schema.hasColumn('messages', 'created_at');
+if (!hasCreatedAt) {
+  await db.schema.alterTable('messages', (table) => {
+    table.timestamp('created_at').defaultTo(db.fn.now());
   });
-  console.log('[INFO] Colonne "userId" ajoutée à la table "publications".');
+  console.log('[INFO] Colonne "created_at" ajoutée à la table "messages".');
+}
+
+
+if (!hasConversationId) {
+  await db.schema.alterTable('messages', (table) => {
+    table.integer('conversation_id').unsigned().references('id').inTable('conversations').onDelete('CASCADE');
+  });
+  console.log('[INFO] Colonne "conversation_id" ajoutée à la table "messages".');
+}
+
+// ✅ Si l'ancienne colonne "profile_picture" existe encore, on la renomme proprement
+const hasOldProfilePicture = await db.schema.hasColumn('users', 'profile_picture');
+if (hasOldProfilePicture) {
+  await db.schema.alterTable('users', (table) => {
+    table.renameColumn('profile_picture', 'profilePicture');
+  });
+  console.log('[INFO] Colonne "profile_picture" renommée en "profilePicture".');
 }
 
 
@@ -300,6 +362,21 @@ if (!hasUserId) {
 })();
 
 
+(async () => {
+  try {
+    const updated = await db('users')
+      .whereNull('profilePicture')
+      .update({ profilePicture: '/uploads/default-profile.png' });
+
+    if (updated > 0) {
+      console.log(`[INFO] ${updated} utilisateur(s) mis à jour avec une photo de profil par défaut.`);
+    } else {
+      console.log('[INFO] Tous les utilisateurs ont déjà une photo de profil.');
+    }
+  } catch (error) {
+    console.error('[ERREUR] Mise à jour automatique des photos de profil :', error.message);
+  }
+})();
 
 
 

@@ -74,8 +74,9 @@ const upload = multer({
 // Création de publication
 router.post('/', upload.single('media'), async (req, res) => {
   
+const userId = parseInt(req.body.userId, 10);
+const content = req.body.content;
 
-  const { userId, content } = req.body;
 const file = req.file;
 let mediaType = null;
 
@@ -87,12 +88,15 @@ if (!userId || (!content && !file)) {
 let mediaUrl = null;
 
 try {
-  if (file) {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (['.jpg', '.jpeg', '.png'].includes(ext)) mediaType = 'image';
-    else if (['.mp4', '.mov', '.avi', '.webm'].includes(ext)) mediaType = 'video';
-    else if (['.mp3', '.wav', '.ogg'].includes(ext)) mediaType = 'audio';
-    else return res.status(400).json({ message: 'Type de fichier non pris en charge.' });
+  if (file) {const mime = file.mimetype;
+
+if (mime.startsWith('image/')) mediaType = 'image';
+else if (mime.startsWith('video/')) mediaType = 'video';
+else if (mime.startsWith('audio/')) mediaType = 'audio';
+else {
+  console.error('[ERREUR] Type MIME non reconnu:', mime);
+  return res.status(400).json({ message: 'Type de fichier non pris en charge.' });
+}
 
     await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -229,61 +233,55 @@ async function getRepliesForComment(commentId) {
 }
 
 
-
-// Route pour gérer le retweet d'une publication
 router.post('/:publicationId/retweet', async (req, res) => {
   const { publicationId } = req.params;
   const { userId } = req.body;
 
   console.log('[BACKEND] Données reçues pour retweet :', { publicationId, userId });
 
-  // Validation des données entrantes
   if (!userId || !publicationId) {
-    console.error('[ERREUR] Données manquantes :', { publicationId, userId });
     return res.status(400).json({ message: "Les champs userId et publicationId sont requis." });
   }
 
   try {
-    // Vérification si la publication existe
     const publication = await db('publications').where({ id: publicationId }).first();
-if (!publication) {
-  console.error('[ERREUR] La publication avec id', publicationId, 'n\'existe pas.');
-  return res.status(404).json({ message: 'Publication introuvable.' });
-}
+    if (!publication) {
+      return res.status(404).json({ message: 'Publication introuvable.' });
+    }
 
-
-  
-
-    // Vérification si l'utilisateur a déjà retweeté cette publication
     const existingRetweet = await db('retweets')
-  .where({ userId: userId, publicationId })
-  .first();
+      .where({ userId: userId, publicationId })
+      .first();
 
-  if (existingRetweet) {
-    return res.status(400).json({ message: 'Vous avez déjà retweeté cette publication.' });
-  }
-  
-  const newRetweet = await db('retweets')
-  .insert({ userId: userId, publicationId })
-  .returning(['id']);
+    if (existingRetweet) {
+      return res.status(400).json({ message: 'Vous avez déjà retweeté cette publication.' });
+    }
 
+    const [newRetweet] = await db('retweets')
+      .insert({ userId: userId, publicationId })
+      .returning(['id']);
 
-if (!newRetweet || newRetweet.length === 0) {
-  console.error('[ERREUR] Impossible d\'ajouter le retweet.');
-  return res.status(500).json({ message: 'Erreur lors de l\'ajout du retweet.' });
-}
+    // 🔎 Récupère l’auteur de la publication
+    const publicationOwnerId = publication.userId;
+    const sender = await db('users').where({ id: userId }).first();
 
-console.log('[SUCCÈS] Retweet ajouté avec succès pour userId :', userId, 'et publicationId :', publicationId);
-res.status(200).json({ message: 'Retweet ajouté avec succès.', id: newRetweet[0].id });
+    // 🔔 Crée une notification si ce n’est pas toi-même
+    if (publicationOwnerId !== userId) {
+      await db('notifications').insert({
+        user_id: publicationOwnerId,
+        sender_id: userId,
+        type: 'retweet',
+        content: `${sender.username} a retweeté votre publication`,
+        created_at: new Date(),
+      });
+    }
 
-
+    res.status(200).json({ message: 'Retweet et notification enregistrés.', id: newRetweet.id });
   } catch (err) {
-    console.error('[ERREUR] Erreur lors de l\'ajout du retweet :', err);
-    res.status(500).json({ message: 'Erreur lors de l\'ajout du retweet.' });
+    console.error('[ERREUR] Erreur lors du retweet :', err);
+    res.status(500).json({ message: 'Erreur lors du retweet.', error: err.message });
   }
 });
-
-
 
 
 
@@ -398,12 +396,12 @@ router.delete('/:publicationId', async (req, res) => {
 // Ajouter un commentaire à une publication
 
 
-
 router.post('/:publicationId/comment', upload.single('media'), async (req, res) => {
   const { publicationId } = req.params;
   const { userId, comment } = req.body;
   let media = null;
 
+  // Upload sur Cloudinary
   if (req.file) {
     try {
       await new Promise((resolve, reject) => {
@@ -430,18 +428,36 @@ router.post('/:publicationId/comment', upload.single('media'), async (req, res) 
   }
 
   try {
+    // Ajout du commentaire
     const [newComment] = await db('commentaires')
       .insert({ publicationId, userId, comment, media })
       .returning('id');
 
-    res.status(201).json({ message: 'Commentaire ajouté avec succès!', id: newComment.id });
+    // 🔎 Récupère l’auteur de la publication
+    const publication = await db('publications').where({ id: publicationId }).first();
+    const publicationOwnerId = publication.userId;
+
+    // 🔎 Récupère le nom de celui qui commente
+    const sender = await db('users').where({ id: userId }).first();
+
+    // 🔔 Crée une notification
+    if (publicationOwnerId !== userId) {
+      await db('notifications').insert({
+        user_id: publicationOwnerId,
+        sender_id: userId,
+        type: 'commentaire',
+        content: `${sender.username} a commenté votre publication`,
+        created_at: new Date(),
+      });
+    }
+
+    res.status(201).json({ message: 'Commentaire ajouté + notification envoyée!', id: newComment.id });
   } catch (err) {
     console.error('[ERREUR] Erreur lors de l\'ajout du commentaire:', err);
     res.status(500).json({ message: 'Erreur lors de l\'ajout du commentaire.', error: err.message });
   }
 });
 
-  
 
 
 

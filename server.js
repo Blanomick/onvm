@@ -1,5 +1,4 @@
 
-
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -9,14 +8,16 @@ const morgan = require('morgan'); // Ajout de morgan pour les logs HTTP
 const multer = require('multer'); // Ajout de multer pour la gestion des fichiers
 const authRoutes = require('./routes/auth'); // Routes d'authentification
 const publicationsRoutes = require('./routes/publications'); // Routes des publications
-const storiesRoutes = require('./routes/stories'); // Routes des stories
+const storiesRoutes = require('./routes/stories');
 const uploadsRoutes = require('./routes/uploads'); // Routes pour l'upload de fichiers
 const usersRoutes = require('./routes/users'); // Routes pour la gestion des utilisateurs
 const adminAuthRoutes = require('./routes/AdminAuth'); // Routes d'authentification Admin
 const communitiesRoutes = require('./routes/communities'); // Routes pour les communautés
 const searchRoutes = require('./routes/search'); // Route de recherche
 const walletRoutes = require('./routes/wallet');
-
+const messagesRoutes = require('./routes/messages');
+const conversationsRoutes = require('./routes/conversations');
+const notificationsRoutes = require('./routes/notifications');
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -41,6 +42,7 @@ app.use(cors({
 
 // Middleware pour répondre aux requêtes OPTIONS
 app.options('*', cors());
+
 
 
 app.use(express.json());
@@ -189,8 +191,9 @@ app.use('/api/communities', require('./routes/communities'));
 app.use('/api/search', require('./routes/search'));
 app.use('/api/wallet', require('./routes/wallet'));
 app.use('/api/live', require('./routes/live')(io));
-
-
+app.use('/api/messages', messagesRoutes);
+app.use('/api/conversations', conversationsRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 
 

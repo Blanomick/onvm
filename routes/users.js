@@ -24,18 +24,8 @@ router.get('/', async (req, res) => {
 
 
 // Configuration de Multer pour stocker les fichiers dans le répertoire 'uploads'
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // Le répertoire où les fichiers seront stockés
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const filename = `${Date.now()}${ext}`; // Renommer le fichier avec un timestamp pour éviter les conflits
-    cb(null, filename);
-  },
-});
 
-const upload = multer({ storage: storage }); // Initialisation de Multer avec la configuration de stockage
+const upload = multer({ storage: multer.memoryStorage() }); // stockage en mémoire pour Cloudinary
 
 
 // 🔹 Route GET pour rechercher les utilisateurs par nom de profil (recherche)
@@ -153,34 +143,6 @@ router.get('/:id/following-list', async (req, res) => {
 
 
 
-router.get('/:id/publications', async (req, res) => {
-  try {
-    const userId = req.params.id;
-
-    const query = `
-     SELECT p.id, p.content, p.media, p.created_at, u.username, u."profilePicture",
-       CASE 
-         WHEN r."userId" IS NOT NULL THEN true 
-         ELSE false 
-       END AS isRetweeted,
-       ru.username AS retweeterUsername
-
-      FROM publications p
-      JOIN users u ON p."userId" = u.id
-      LEFT JOIN retweets r ON r."publicationId" = p.id AND r."userId" = ?
-      LEFT JOIN users ru ON r."userId" = ru.id
-      WHERE p."userId" = ? OR r."userId" = ?
-      ORDER BY p.created_at DESC;
-    `;
-
-    const publications = await db.raw(query, [userId, userId, userId]);
-
-    res.status(200).json(publications.rows);
-  } catch (error) {
-    console.error('[ERREUR] Impossible de récupérer les publications et retweets:', error);
-    res.status(500).json({ message: 'Erreur interne du serveur.' });
-  }
-});
 
 
 
@@ -237,7 +199,7 @@ router.put('/:id/bio', async (req, res) => {
 
 
 
-// ✅ Route POST corrigée pour suivre un utilisateur
+// ✅ Route POST mise à jour pour suivre un utilisateur et créer une notification
 router.post('/follow', async (req, res) => {
   const { followerId, followingId } = req.body;
 
@@ -249,10 +211,8 @@ router.post('/follow', async (req, res) => {
   }
 
   try {
-    console.log('[DEBUG] Vérification du follow avec les bons noms de colonnes');
-
     const existingFollow = await db('follows')
-      .where({ followerId: followerId, followingId: followingId })
+      .where({ followerId, followingId })
       .first();
 
     if (existingFollow) {
@@ -260,15 +220,22 @@ router.post('/follow', async (req, res) => {
       return res.status(400).json({ message: 'Vous suivez déjà cet utilisateur.' });
     }
 
-    await db('follows').insert({
-      followerId: followerId,
-      followingId: followingId
+    // 👉 Insertion dans la table follows
+    await db('follows').insert({ followerId, followingId });
+
+    // ✅ Insertion dans la table notifications
+    await db('notifications').insert({
+      user_id: followingId,           // l'utilisateur qui reçoit la notif
+      sender_id: followerId,          // l'utilisateur qui a cliqué "suivre"
+      type: 'abonnement',
+      content: 'Vous avez un nouvel abonné',
+      created_at: new Date(),
     });
 
     console.log(`[SUCCÈS] L'utilisateur ${followerId} suit maintenant ${followingId}`);
-    res.status(200).json({ message: 'Suivi réussi.' });
+    res.status(200).json({ message: 'Suivi réussi et notification envoyée.' });
   } catch (err) {
-    console.error('[ERREUR] Échec de la requête de suivi :', err);
+    console.error('[ERREUR] Échec du suivi ou de la notification :', err);
     res.status(500).json({ message: 'Erreur interne du serveur', details: err.message });
   }
 });
@@ -378,23 +345,51 @@ router.get('/:userId/wallet/history', async (req, res) => {
 
 // Route PUT pour mettre à jour la photo de profil
 
+const cloudinary = require('cloudinary').v2;
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 router.put('/:id/profile-picture', upload.single('profilePicture'), async (req, res) => {
   const userId = req.params.id;
-  const profilePicturePath = req.file ? `/uploads/${req.file.filename}` : null;
 
-  if (!profilePicturePath) {
+  if (!req.file) {
     return res.status(400).json({ message: 'La photo de profil est requise.' });
   }
 
   try {
-    await db('users').where({ id: userId }).update({ profilePicture: profilePicturePath });
-    res.status(200).json({ message: 'Photo de profil mise à jour avec succès.', profilePicture: profilePicturePath });
+    // 📤 Upload vers Cloudinary
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: 'onvm_profiles' },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        }
+      );
+      stream.end(req.file.buffer);
+    });
+
+    const cloudUrl = result.secure_url;
+
+    // 💾 Met à jour la BDD avec l'URL Cloudinary
+    await db('users').where({ id: userId }).update({ profilePicture: cloudUrl });
+
+    res.status(200).json({
+      message: 'Photo de profil mise à jour avec succès via Cloudinary.',
+      profilePicture: cloudUrl,
+    });
+
   } catch (err) {
-    console.error("[ERREUR] Erreur lors de la mise à jour de la photo de profil :", err);
-    res.status(500).json({ message: 'Erreur lors de la mise à jour de la photo de profil.' });
+    console.error('[ERREUR] Erreur Cloudinary :', err);
+    res.status(500).json({ message: 'Erreur lors de l\'upload vers Cloudinary.', error: err.message });
   }
 });
+
+
 
 
 
@@ -409,11 +404,11 @@ router.get('/:id/publications', async (req, res) => {
     }
 
     const query = `
-     SELECT p.id, p.content, p.media, p.created_at, u.username, u.profilePicture
+   SELECT p.id, p.content, p.media, p.mediatype, p.created_at, u.username, u."profilePicture"
+
 FROM publications p
 JOIN users u ON p."userId" = u.id
 WHERE p."userId" = ?
-
 ORDER BY p.created_at DESC
 
     `;
@@ -621,13 +616,15 @@ router.get('/:id/retweets', async (req, res) => {
       .join('publications', 'retweets.publicationId', 'publications.id')
       .join('users', 'publications.userId', 'users.id')
       .select(
-        'publications.id',
-        'publications.content',
-        'publications.media',
-        'publications.created_at',
-        'users.username',
-        'users.profilePicture'
-      )
+  'publications.id',
+  'publications.content',
+  'publications.media',
+  'publications.mediatype',
+  'publications.created_at',
+  'users.username',
+  'users.profilePicture'
+)
+
       .where('retweets.userId', id)
       .orderBy('retweets.created_at', 'desc');
 
