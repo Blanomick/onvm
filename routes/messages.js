@@ -22,26 +22,30 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // 🟢 Envoyer un message texte ou média
-router.post('/send', upload.single('media'), async (req, res) => {
-  const { conversation_id, sender_id, content } = req.body;
-  const media = req.file ? `/uploads/${req.file.filename}` : null;
+// ✅ Route pour envoyer un message texte (utilisée depuis la story)
+router.post('/', async (req, res) => {
+  const { conversation_id, user_id, content } = req.body;
+
+  if (!conversation_id || !user_id || !content) {
+    return res.status(400).json({ error: 'Champs manquants' });
+  }
 
   try {
-    const message = await db('direct_messages')
-      .insert({
-        conversation_id,
-        sender_id,
-        content,
-        media,
-      })
-      .returning('*');
+    const [message] = await db('messages').insert({
+      conversation_id,
+      user_id,
+      content,
+      is_read: false,
+      created_at: new Date()
+    }).returning('*');
 
-    res.json(message[0]);
+    res.status(201).json(message);
   } catch (err) {
-    console.error('[ERREUR] Envoi message :', err.message);
-    res.status(500).json({ message: 'Erreur envoi message' });
+    console.error('[ERREUR] Envoi message privé :', err);
+    res.status(500).json({ error: "Erreur lors de l'enregistrement du message" });
   }
 });
+
 
 // 🔵 Récupérer tous les messages d’une conversation
 router.get('/:conversationId', async (req, res) => {

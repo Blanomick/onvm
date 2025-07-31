@@ -129,6 +129,7 @@ const db = knex({
           table.text('content');
           table.timestamp('created_at').defaultTo(db.fn.now());
         },
+
       },
       {
         name: 'follows',
@@ -259,6 +260,20 @@ const db = knex({
     table.timestamp('created_at').defaultTo(db.fn.now());
   },
 },
+
+
+
+{
+  name: 'story_comments',
+  schema: (table) => {
+    table.increments('id').primary();
+    table.integer('story_id').unsigned().references('id').inTable('stories').onDelete('CASCADE');
+    table.integer('user_id').unsigned().references('id').inTable('users').onDelete('CASCADE');
+    table.text('comment').notNullable();
+    table.timestamp('created_at').defaultTo(db.fn.now());
+  },
+},
+
 
 
     ];

@@ -43,63 +43,10 @@ router.post('/create', async (req, res) => {
 });
 
 
-// 🔵 Récupérer toutes les conversations de l’utilisateur
-router.get('/:userId', async (req, res) => {
-  const userId = parseInt(req.params.userId);
 
-  if (!userId) {
-    return res.status(400).json({ error: 'ID utilisateur invalide' });
-  }
-
-  try {
- const rawConversations = await db('conversations')
-  .select('*')
-  .where('sender_id', userId)
-  .orWhere('receiver_id', userId)
-  .orderBy('created_at', 'desc');
-
-const conversations = [];
-
-for (const conv of rawConversations) {
-  const otherUserId = conv.sender_id === userId ? conv.receiver_id : conv.sender_id;
-  const user = await db('users').where({ id: otherUserId }).first();
-
-  const lastMsg = await db('messages')
-    .where('conversation_id', conv.id)
-    .orderBy('created_at', 'desc')
-    .first();
-
-  conversations.push({
-    id: conv.id,
-    username: user?.username || null,
-    profilePicture: user?.profilePicture || null,
-    last_message: lastMsg ? lastMsg.content : null,
-    last_message_time: lastMsg ? lastMsg.timestamp : null
-  });
-}
-
-res.json(conversations);
-
-  for (const conv of conversations) {
- const lastMsg = await db('messages')
-  .where('conversation_id', conv.id)
-  .orderBy('created_at', 'desc') // ✅ nouveau nom correct
-  .first();
+  
 
 
-
-  conv.last_message = lastMsg ? lastMsg.content : null;
-  conv.last_message_time = lastMsg ? lastMsg.timestamp : null;
-
-}
-
-
-  res.json(conversations);
-  } catch (err) {
-    console.error('[ERREUR] Récupération conversations :', err.message);
-    res.status(500).json({ error: 'Erreur lors de la récupération des conversations' });
-  }
-});
 
 // 🔴 Récupérer le nombre de messages non lus pour un utilisateur
 router.get('/unread/:userId', async (req, res) => {
@@ -123,4 +70,49 @@ router.get('/unread/:userId', async (req, res) => {
 });
 
 
+// 🔵 Récupérer toutes les conversations de l’utilisateur
+router.get('/:userId', async (req, res) => {
+  const userId = parseInt(req.params.userId);
+
+  if (!userId) {
+    return res.status(400).json({ error: 'ID utilisateur invalide' });
+  }
+
+  try {
+    const rawConversations = await db('conversations')
+      .select('*')
+      .where('sender_id', userId)
+      .orWhere('receiver_id', userId)
+      .orderBy('created_at', 'desc');
+
+    const conversations = [];
+
+    for (const conv of rawConversations) {
+      const otherUserId = conv.sender_id === userId ? conv.receiver_id : conv.sender_id;
+      const user = await db('users').where({ id: otherUserId }).first();
+
+      const lastMsg = await db('messages')
+        .where('conversation_id', conv.id)
+        .orderBy('created_at', 'desc')
+        .first();
+
+      conversations.push({
+        id: conv.id,
+        username: user?.username || null,
+        profilePicture: user?.profilePicture || null,
+        last_message: lastMsg ? lastMsg.content : null,
+      last_message_time: lastMsg ? lastMsg.created_at : null
+
+      });
+    }
+
+    // ✅ FERMETURE du try ici
+    res.json(conversations);
+  } catch (err) {
+    console.error('[ERREUR] Récupération des conversations :', err);
+    res.status(500).json({ error: "Erreur serveur." });
+  }
+});
+
+                      
 module.exports = router;

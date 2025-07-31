@@ -288,6 +288,22 @@ router.get('/:id/extra-data', async (req, res) => {
 });
 
 
+// Suggestion des utilisateurs pour les tags
+router.get('/search', async (req, res) => {
+  const { q } = req.query;
+  try {
+    const users = await db.any(
+      "SELECT id, username FROM users WHERE username ILIKE $1 LIMIT 5",
+      [`%${q}%`]
+    );
+    res.json(users);
+  } catch (error) {
+    console.error('Erreur de recherche utilisateurs :', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+
 
 // Route GET pour récupérer le solde du portefeuille d'un utilisateur
 
