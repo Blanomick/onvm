@@ -30,23 +30,11 @@ const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   const allowedTypes = [
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-    'image/webp',
-    'image/gif',      // Ajouter .gif
-    'image/svg+xml',  // Ajouter .svg
-    'image/bmp',      // Ajouter .bmp
-    'video/mp4',
-    'video/quicktime',
-    'video/x-msvideo',
-    'video/webm',
-    'audio/mpeg',
-    'audio/mp3',
-    'audio/wav',
-    'audio/ogg'
-  ];
-  
+  'image/jpeg','image/jpg','image/png','image/webp','image/gif','image/svg+xml','image/bmp',
+  'video/mp4','video/quicktime','video/x-msvideo','video/webm','video/ogg', // + ogv
+  'audio/mpeg','audio/mp3','audio/wav','audio/ogg','audio/opus','audio/aac','audio/x-m4a','audio/m4a'
+];
+
 
   if (!allowedTypes.includes(file.mimetype)) {
     console.error('[ERREUR] Type de fichier refusé :', file.mimetype);
@@ -65,71 +53,138 @@ const upload = multer({
   limits: { fileSize: 300 * 1024 * 1024 }
 });
 
+const dns = require('dns').promises;
+
+// Vérifie si le DNS Cloudinary est joignable
+async function cloudinaryReachable() {
+  try {
+    await dns.lookup('api.cloudinary.com');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Upload Cloudinary (promesse)
+function uploadToCloudinary(file, folder) {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { resource_type: 'auto', folder },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result.secure_url);
+      }
+    );
+    uploadStream.end(file.buffer);
+  });
+}
+
+// Sauvegarde locale (fallback) et retourne une URL publique /uploads/...
+async function saveLocal(file, subfolder = 'onvm_publications') {
+  const folderPath = path.join(uploadDir, subfolder);
+  await fs.promises.mkdir(folderPath, { recursive: true });
+
+  const extFromMime = {
+    'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/png': '.png', 'image/webp': '.webp',
+    'image/gif': '.gif', 'image/svg+xml': '.svg', 'image/bmp': '.bmp',
+    'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/x-msvideo': '.avi', 'video/webm': '.webm', 'video/ogg': '.ogv',
+    'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/wav': '.wav', 'audio/ogg': '.ogg', 'audio/opus': '.opus', 'audio/aac': '.aac', 'audio/x-m4a': '.m4a', 'audio/m4a': '.m4a'
+  };
+
+  const ext = path.extname(file.originalname) || extFromMime[file.mimetype] || '';
+  const name = `${Date.now()}-${Math.random().toString(36).slice(2,8)}${ext}`;
+  const full = path.join(folderPath, name);
+  await fs.promises.writeFile(full, file.buffer);
+  return `/uploads/${subfolder}/${name}`;
+}
+
+// Essaie Cloudinary, sinon bascule en local
+async function storeWithFallback(file, folder) {
+  const ok = await cloudinaryReachable();
+  if (ok) {
+    try {
+      return await uploadToCloudinary(file, folder);
+    } catch (e) {
+      console.error('[WARN] Cloudinary upload failed, fallback to local:', e?.message || e);
+      return await saveLocal(file, folder);
+    }
+  } else {
+    console.warn('[WARN] Cloudinary DNS unreachable, saving locally.');
+    return await saveLocal(file, folder);
+  }
+}
 
 
 
 
 // Création de publication
 
-// Création de publication
-router.post('/', upload.single('media'), async (req, res) => {
-  
-const userId = parseInt(req.body.userId, 10);
-const content = req.body.content;
+// Création de publication// Création de publication (multi-fichiers)
+// Création de publication (multi-fichiers, accepte media | media[] | file | files)
+router.post(
+  '/',
+  upload.fields([
+    { name: 'media', maxCount: 5 },
+    { name: 'media[]', maxCount: 5 },
+    { name: 'file', maxCount: 5 },
+    { name: 'files', maxCount: 5 },
+  ]),
+  async (req, res) => {
+    const userId = parseInt(req.body.userId, 10);
+    const content = req.body.content || null;
 
-const file = req.file;
-let mediaType = null;
+    // Tolérant sur les noms de champs
+    const mediaFiles =
+      req.files?.media ||
+      req.files?.['media[]'] ||
+      req.files?.files ||
+      req.files?.file ||
+      [];
 
-if (!userId || (!content && !file)) {
-  return res.status(400).json({ message: 'Veuillez ajouter un texte ou un fichier média.' });
-}
+    console.log('[DEBUG] champs fichier reçus (create):', Object.keys(req.files || {}));
+
+    if (!userId || (!content && mediaFiles.length === 0)) {
+      return res.status(400).json({ message: 'Veuillez ajouter un texte ou un fichier média.' });
+    }
+
+    // Upload (Cloudinary si dispo, sinon local) pour chaque fichier
+    const uploads = [];
+    try {
+      for (const f of mediaFiles) {
+        const url = await storeWithFallback(f, 'onvm_publications');
+
+        let kind = null;
+        if (f.mimetype.startsWith('image/')) kind = 'image';
+        else if (f.mimetype.startsWith('video/')) kind = 'video';
+        else if (f.mimetype.startsWith('audio/')) kind = 'audio';
+        else kind = 'other';
+
+        uploads.push({ url, kind });
+      }
 
 
-let mediaUrl = null;
 
-try {
-  if (file) {const mime = file.mimetype;
+      // mediatype = type du 1er media (optionnel pour compat legacy)
+      const mediaType = uploads[0]?.kind || null;
 
-if (mime.startsWith('image/')) mediaType = 'image';
-else if (mime.startsWith('video/')) mediaType = 'video';
-else if (mime.startsWith('audio/')) mediaType = 'audio';
-else {
-  console.error('[ERREUR] Type MIME non reconnu:', mime);
-  return res.status(400).json({ message: 'Type de fichier non pris en charge.' });
-}
+      const [newPublication] = await db('publications')
+        .insert({
+          userId,
+          content,
+          // on stocke le tableau [{url,kind}] en JSON dans la colonne "media" (type TEXT/JSON)
+          media: uploads.length ? JSON.stringify(uploads) : null,
+          mediatype: mediaType
+        })
+        .returning(['id']);
 
-    await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { resource_type: 'auto', folder: 'onvm_publications' },
-        (error, result) => {
-          if (error) {
-            console.error('[ERREUR] Erreur upload Cloudinary :', error);
-            return reject(error);
-          }
-          mediaUrl = result.secure_url;
-          resolve();
-        }
-      );
-      uploadStream.end(file.buffer);
-    });
+      res.status(201).json({ message: 'Publication ajoutée avec succès!', id: newPublication.id });
+    } catch (err) {
+      console.error('[ERREUR] Erreur lors de la création de la publication:', err);
+      res.status(500).json({ message: 'Erreur lors de la création de la publication.', error: err.message });
+    }
   }
+);
 
-
-
-
-
-
-    const [newPublication] = await db('publications')
-      .insert({ userId: userId, content, media: mediaUrl, mediatype: mediaType })
-
-      .returning(['id']);
-
-    res.status(201).json({ message: 'Publication ajoutée avec succès!', id: newPublication.id });
-  } catch (err) {
-    console.error('[ERREUR] Erreur lors de la création de la publication:', err);
-    res.status(500).json({ message: 'Erreur lors de la création de la publication.', error: err.message });
-  }
-});
 
 
 
@@ -156,32 +211,58 @@ router.get('/', async (req, res) => {
       .leftJoin('users', 'publications.userId', 'users.id')
       .orderBy('publications.created_at', 'desc');
 
-    for (const publication of publications) {
-      // 1. Ajouter les commentaires
-      publication.comments = await getCommentsForPublication(publication.id);
-
-      // 2. Ajouter les réponses
-      for (let comment of publication.comments) {
-        comment.replies = await getRepliesForComment(comment.id);
-      }
-
-      // 3. Ajouter le nombre de likes
-      const totalLikes = await db('likes')
-        .where({ publicationId: publication.id })
-        .count()
-        .first();
-      publication.likeCount = parseInt(totalLikes.count);
-
-      // 4. Vérifier si l'utilisateur a liké
-      if (userId) {
-        const userLike = await db('likes')
-          .where({ publicationId: publication.id, userId })
-          .first();
-        publication.userHasLiked = !!userLike;
+   for (const publication of publications) {
+  // 0) Normaliser media -> toujours un tableau [{url, kind}]
+  try {
+    if (publication.media == null) {
+      publication.media = [];
+    } else if (typeof publication.media === 'string') {
+      const s = publication.media.trim();
+      if (s.startsWith('[') || s.startsWith('{')) {
+        const parsed = JSON.parse(s);
+        publication.media = Array.isArray(parsed)
+          ? parsed
+          : (parsed?.url ? [parsed] : []);
       } else {
-        publication.userHasLiked = false;
+        // ancien format: URL simple
+        publication.media = [{ url: s, kind: publication.mediatype || null }];
       }
     }
+    // si c'est déjà un array via JSONB, on ne touche pas
+  } catch (e) {
+    console.warn('[WARN] media non JSON, fallback en string:', publication.media);
+    publication.media = publication.media
+      ? [{ url: String(publication.media), kind: publication.mediatype || null }]
+      : [];
+  }
+
+  // 1) Ajouter les commentaires
+  publication.comments = await getCommentsForPublication(publication.id);
+
+  // 2) Ajouter les réponses
+  for (let comment of publication.comments) {
+    comment.replies = await getRepliesForComment(comment.id);
+  }
+
+  // 3) Ajouter le nombre de likes
+  const totalLikes = await db('likes')
+    .where({ publicationId: publication.id })
+    .count()
+    .first();
+  publication.likeCount = parseInt(totalLikes.count);
+
+  // 4) Vérifier si l'utilisateur a liké
+  if (userId) {
+    const userLike = await db('likes')
+      .where({ publicationId: publication.id, userId })
+      .first();
+    publication.userHasLiked = !!userLike;
+  } else {
+    publication.userHasLiked = false;
+  }
+}
+
+
 
     res.status(200).json(publications);
   } catch (err) {
@@ -262,19 +343,27 @@ router.post('/:publicationId/retweet', async (req, res) => {
       .returning(['id']);
 
     // 🔎 Récupère l’auteur de la publication
-    const publicationOwnerId = publication.userId;
-    const sender = await db('users').where({ id: userId }).first();
 
-    // 🔔 Crée une notification si ce n’est pas toi-même
-    if (publicationOwnerId !== userId) {
-      await db('notifications').insert({
-        user_id: publicationOwnerId,
-        sender_id: userId,
-        type: 'retweet',
-        content: `${sender.username} a retweeté votre publication`,
-        created_at: new Date(),
-      });
-    }
+
+    // 🔎 Récupère l’auteur de la publication
+const ownerId = publication.userId;
+const actor = await db('users').where({ id: userId }).first();
+
+// 🔔 Notif (schéma V2) si ce n’est pas toi-même
+if (ownerId && ownerId !== userId) {
+  await db('notifications')
+    .insert({
+      user_id: ownerId,                  // destinataire
+      actor_id: userId,                  // auteur de l’action
+      type: 'retweet_publication',       // type explicite
+      entity_type: 'publication',
+      entity_id: Number(publicationId),
+      metadata: { actor_username: actor?.username ?? null },
+    })
+    .onConflict(['type','user_id','actor_id','entity_type','entity_id'])
+    .ignore(); // pas de doublons
+}
+
 
     res.status(200).json({ message: 'Retweet et notification enregistrés.', id: newRetweet.id });
   } catch (err) {
@@ -335,12 +424,34 @@ router.post('/:publicationId/like', async (req, res) => {
     return res.status(400).json({ message: 'Vous avez déjà liké cette publication.' });
   }
   
-  
-const [newLike] = await db('likes')
-.insert({ userId: userId, publicationId })
-.returning('id');
 
-    res.status(200).json({ message: 'Like ajouté avec succès.', id: newLike.id });
+  const [newLike] = await db('likes')
+  .insert({ userId: userId, publicationId })
+  .returning('id');
+
+// 🔔 Notif pour le propriétaire de la publication
+try {
+  const pub = await db('publications').select('userId').where({ id: publicationId }).first();
+  const ownerId = pub?.userId;
+  if (ownerId && ownerId !== userId) {
+    await db('notifications')
+      .insert({
+        user_id: ownerId,
+        actor_id: userId,
+        type: 'like_publication',
+        entity_type: 'publication',
+        entity_id: Number(publicationId),
+        metadata: {},
+      })
+      .onConflict(['type','user_id','actor_id','entity_type','entity_id'])
+      .ignore();
+  }
+} catch (e) {
+  console.warn('[notifications] like_publication non critique:', e.message);
+}
+
+res.status(200).json({ message: 'Like ajouté avec succès.', id: newLike.id });
+
   } catch (err) {
     console.error('[ERREUR] Erreur lors de l\'ajout du like :', err);
     res.status(500).json({ message: 'Erreur lors de l\'ajout du like.', error: err.message });
@@ -396,67 +507,63 @@ router.delete('/:publicationId', async (req, res) => {
 // Ajouter un commentaire à une publication
 
 
-router.post('/:publicationId/comment', upload.single('media'), async (req, res) => {
-  const { publicationId } = req.params;
-  const { userId, comment } = req.body;
-  let media = null;
+// Commentaire: accepte texte OU media(image/vidéo) OU audio
+router.post(
+  '/:publicationId/comment',
+  upload.fields([
+    { name: 'media', maxCount: 1 },
+    { name: 'audio', maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const { publicationId } = req.params;
+    const { userId } = req.body;
+    const comment = req.body.comment || null;
 
-  // Upload sur Cloudinary
-  if (req.file) {
-    try {
-      await new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          { resource_type: 'auto', folder: 'onvm_comments' },
-          (error, result) => {
-            if (error) {
-              console.error('[ERREUR] Erreur upload commentaire Cloudinary :', error);
-              return reject(error);
-            }
-            media = result.secure_url;
-            resolve();
-          }
-        );
-        uploadStream.end(req.file.buffer);
-      });
-    } catch (error) {
-      return res.status(500).json({ message: "Erreur lors de l'upload sur Cloudinary.", error: error.message });
-    }
-  }
+    const mediaFile = req.files?.media?.[0] || null;
+    const audioFile = req.files?.audio?.[0] || null;
 
-  if (!userId || !comment) {
-    return res.status(400).json({ message: 'Les champs userId et comment sont obligatoires.' });
-  }
-
-  try {
-    // Ajout du commentaire
-    const [newComment] = await db('commentaires')
-      .insert({ publicationId, userId, comment, media })
-      .returning('id');
-
-    // 🔎 Récupère l’auteur de la publication
-    const publication = await db('publications').where({ id: publicationId }).first();
-    const publicationOwnerId = publication.userId;
-
-    // 🔎 Récupère le nom de celui qui commente
-    const sender = await db('users').where({ id: userId }).first();
-
-    // 🔔 Crée une notification
-    if (publicationOwnerId !== userId) {
-      await db('notifications').insert({
-        user_id: publicationOwnerId,
-        sender_id: userId,
-        type: 'commentaire',
-        content: `${sender.username} a commenté votre publication`,
-        created_at: new Date(),
-      });
+    if (!userId || (!comment && !mediaFile && !audioFile)) {
+      return res.status(400).json({ message: 'Ajoutez un texte, un média ou un audio.' });
     }
 
-    res.status(201).json({ message: 'Commentaire ajouté + notification envoyée!', id: newComment.id });
-  } catch (err) {
-    console.error('[ERREUR] Erreur lors de l\'ajout du commentaire:', err);
-    res.status(500).json({ message: 'Erreur lors de l\'ajout du commentaire.', error: err.message });
+   let media = null; // on stocke l’URL (image, vidéo ou audio) dans la colonne "media"
+
+try {
+  const toUpload = mediaFile || audioFile; // on ne garde qu’un seul fichier (compat DB)
+  if (toUpload) {
+    media = await storeWithFallback(toUpload, 'onvm_comments');
   }
-});
+
+  const [newComment] = await db('commentaires')
+    .insert({ publicationId, userId, comment, media })
+    .returning('id');
+
+    // 🔔 Notif commentaire (schéma V2)
+const publication = await db('publications').where({ id: publicationId }).first();
+const ownerId = publication?.userId;
+
+if (ownerId && ownerId !== userId) {
+  await db('notifications')
+    .insert({
+      user_id: ownerId,
+      actor_id: userId,
+      type: 'comment_publication',
+      entity_type: 'publication',
+      entity_id: Number(publicationId),
+      metadata: { snippet: (comment || '').slice(0, 120) },
+    })
+    .onConflict(['type','user_id','actor_id','entity_type','entity_id'])
+    .ignore();
+}
+
+
+      res.status(201).json({ message: 'Commentaire ajouté + notification envoyée!', id: newComment.id });
+    } catch (err) {
+      console.error('[ERREUR] Erreur lors de l\'ajout du commentaire:', err);
+      res.status(500).json({ message: 'Erreur lors de l\'ajout du commentaire.', error: err.message });
+    }
+  }
+);
 
 
 

@@ -18,6 +18,7 @@ const walletRoutes = require('./routes/wallet');
 const messagesRoutes = require('./routes/messages');
 const conversationsRoutes = require('./routes/conversations');
 const notificationsRoutes = require('./routes/notifications');
+const voiceNotesRoutes = require('./routes/voiceNotes');
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -180,6 +181,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
 }));
 
 
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url} - Reçu à ${new Date().toISOString()}`);
+  next();
+});
+
+
 // Routes principales
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/publications', require('./routes/publications'));
@@ -194,6 +201,7 @@ app.use('/api/live', require('./routes/live')(io));
 app.use('/api/messages', messagesRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/voice-notes', voiceNotesRoutes(io));
 
 
 
@@ -207,17 +215,6 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'API connectée avec succès !' });
 });
 
-// Gestion des erreurs pour les routes non trouvées
-app.use('*', (req, res) => {
-  console.error(`[ERREUR] Route non trouvée : ${req.method} ${req.url}`);
-  res.status(404).json({ message: 'Route non trouvée' });
-});
-
-// Gestion des erreurs globales
-app.use((err, req, res, next) => {
-  console.error(`[ERREUR] Erreur détectée : ${err.stack}`);
-  res.status(500).json({ message: 'Erreur interne du serveur' });
-});
 
 
 db.raw('SELECT 1')
@@ -250,10 +247,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Erreur interne du serveur' });
 });
 
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url} - Reçu à ${new Date().toISOString()}`);
-  next();
-});
 
 
 

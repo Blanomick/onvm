@@ -18,7 +18,8 @@ const createToken = (user) => {
 // 🔹 INSCRIPTION D'UN UTILISATEUR
 router.post('/register', async (req, res) => {
     try {
-        const { username, email, password } = req.body;
+        const { username, email, password, referral_code } = req.body;
+
 
         if (!username || !email || !password) {
             return res.status(400).json({ message: 'Tous les champs sont requis.' });
@@ -33,21 +34,38 @@ router.post('/register', async (req, res) => {
         if (checkUser) {
             return res.status(400).json({ message: 'Cet email ou nom d’utilisateur existe déjà.' });
         }
+         
+
+        
+let referred_by_user_id = null;
+
+if (referral_code) {
+  const inviter = await db('users').where({ referral_code }).first();
+  if (inviter) {
+    referred_by_user_id = inviter.id;
+  } else {
+    return res.status(400).json({ message: "Code de parrainage invalide." });
+  }
+}
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Insérer l'utilisateur
-        const [newUser] = await db('users')
-        .insert({
-          username,
-          email,
-          password: hashedPassword,
-          profilePicture: 'https://onvm.org/uploads/default-profile.png',
-          bio: '',
-          isAdmin: false
-        })
-        .returning(['id', 'username', 'email', 'profilePicture']);
       
+      const generatedReferralCode = username + Math.floor(1000 + Math.random() * 9000);
+  
+      const [newUser] = await db('users')
+  .insert({
+    username,
+    email,
+    password: hashedPassword,
+    profilePicture: 'https://onvm.org/uploads/default-profile.png',
+    bio: '',
+    isAdmin: false,
+    referral_code: generatedReferralCode,
+    referred_by_user_id
+  })
+  .returning(['id', 'username', 'email', 'profilePicture', 'referral_code', 'referred_by_user_id']);
+
         const token = createToken(newUser);
         res.status(201).json({ message: 'Utilisateur inscrit avec succès.', user: newUser, token });
 

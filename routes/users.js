@@ -223,14 +223,14 @@ router.post('/follow', async (req, res) => {
     // 👉 Insertion dans la table follows
     await db('follows').insert({ followerId, followingId });
 
-    // ✅ Insertion dans la table notifications
-    await db('notifications').insert({
-      user_id: followingId,           // l'utilisateur qui reçoit la notif
-      sender_id: followerId,          // l'utilisateur qui a cliqué "suivre"
-      type: 'abonnement',
-      content: 'Vous avez un nouvel abonné',
-      created_at: new Date(),
-    });
+   await db('notifications').insert({
+  actor_id: followerId,
+  user_id: followingId,
+  type: 'follow',
+  content: `${followerUsername} vous suit.`,
+  created_at: new Date(),
+});
+
 
     console.log(`[SUCCÈS] L'utilisateur ${followerId} suit maintenant ${followingId}`);
     res.status(200).json({ message: 'Suivi réussi et notification envoyée.' });
@@ -447,21 +447,26 @@ ORDER BY p.created_at DESC
 
 
 // Route DELETE pour supprimer un retweet par publicationId et userId
-router.delete('/retweets/:publicationId/:userId', (req, res) => {
+// ✅ Route DELETE pour supprimer un retweet avec Knex
+router.delete('/retweets/:publicationId/:userId', async (req, res) => {
   const { publicationId, userId } = req.params;
 
-  const deleteQuery = 'DELETE FROM retweets WHERE publicationId = ? AND userId = ?';
-  db.run(deleteQuery, [publicationId, userId], function (err) {
-    if (err) {
-      console.error('Erreur lors de la suppression du retweet:', err);
-      return res.status(500).json({ error: 'Erreur interne du serveur.' });
+  try {
+    const deleted = await db('retweets')
+      .where({ publicationId, userId })
+      .del();
+
+    if (deleted === 0) {
+      return res.status(404).json({ message: 'Retweet introuvable.' });
     }
-    if (this.changes === 0) {
-      return res.status(404).json({ error: 'Retweet introuvable.' });
-    }
+
     res.status(200).json({ message: 'Retweet supprimé avec succès.' });
-  });
+  } catch (err) {
+    console.error('[ERREUR] Erreur lors de la suppression du retweet :', err);
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
 });
+
 
 router.get('/:id/followers', async (req, res) => {
   const userId = req.params.id;
