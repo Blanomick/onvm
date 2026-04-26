@@ -55,11 +55,10 @@ require('dotenv').config(); // Charge les variables d'environnement
 
 const NODE_ENV = process.env.NODE_ENV || 'development'; // Définit l'environnement
 
-// Choix de la base de données selon l'environnement
-const DATABASE_URL = NODE_ENV === 'production' ? process.env.DATABASE_URL_PROD : process.env.DATABASE_URL_LOCAL;
-const JWT_SECRET = process.env.JWT_SECRET || "monSuperSecret123"; // Remplace par une vraie clé secrète
+// Choix de la base de données
+const DATABASE_URL = process.env.DATABASE_URL;
+const JWT_SECRET = process.env.JWT_SECRET || "monSuperSecret123";
 const PORT = process.env.PORT || 5000;
-
 // Logs pour vérifier les valeurs des variables d'environnement
 console.log(`[INFO] Environnement : ${NODE_ENV}`);
 console.log(`[INFO] DATABASE_URL : ${DATABASE_URL}`);
