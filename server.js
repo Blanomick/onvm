@@ -98,9 +98,10 @@ if (!JWT_SECRET) {
 
 const db = knex({
   client: 'pg',
-  connection: NODE_ENV === 'production' 
-    ? { connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } } 
-    : { connectionString: DATABASE_URL },
+  connection: {
+    connectionString: DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  },
   pool: {
     min: 1,
     max: 5,
