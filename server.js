@@ -19,6 +19,8 @@ const messagesRoutes = require('./routes/messages');
 const conversationsRoutes = require('./routes/conversations');
 const notificationsRoutes = require('./routes/notifications');
 const voiceNotesRoutes = require('./routes/voiceNotes');
+const groupRoutes = require('./routes/groups');
+
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -202,7 +204,7 @@ app.use('/api/messages', messagesRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/voice-notes', voiceNotesRoutes(io));
-
+app.use('/api/groups', groupRoutes);
 
 
 // Route pour la racine du backend

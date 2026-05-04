@@ -242,26 +242,75 @@ console.log('[INFO] Tentative de connexion à la base de données PostgreSQL...'
           table.timestamp('created_at').defaultTo(db.fn.now());
         },
       },
-      {
-        name: 'communities',
-        schema: (table) => {
-          table.increments('id').primary();
-          table.string('name').notNullable();
-          table.text('description');
-          table.integer('created_by').unsigned().references('id').inTable('users').onDelete('CASCADE');
-          table.timestamp('created_at').defaultTo(db.fn.now());
-        },
-      },
-      {
-        name: 'community_members',
-        schema: (table) => {
-          table.increments('id').primary();
-          table.integer('community_id').unsigned().references('id').inTable('communities').onDelete('CASCADE');
-          table.integer('user_id').unsigned().references('id').inTable('users').onDelete('CASCADE');
-          table.string('role').defaultTo('member');
-          table.timestamp('joined_at').defaultTo(db.fn.now());
-        },
-      },
+
+
+     {
+  name: 'communities',
+  schema: (table) => {
+    table.increments('id').primary();
+    table.string('name').notNullable();
+    table.text('description');
+    table.integer('created_by').unsigned().references('id').inTable('users').onDelete('CASCADE');
+    table.timestamp('created_at').defaultTo(db.fn.now());
+  },
+},
+
+{
+  name: 'groups',
+  schema: (table) => {
+    table.increments('id').primary();
+    table.string('name').notNullable();
+    table.text('description');
+
+    table.integer('community_id')
+      .unsigned()
+      .references('id')
+      .inTable('communities')
+      .onDelete('CASCADE')
+      .nullable();
+
+    table.integer('created_by')
+      .unsigned()
+      .references('id')
+      .inTable('users')
+      .onDelete('CASCADE');
+
+    table.timestamp('created_at').defaultTo(db.fn.now());
+  },
+},
+
+{
+  name: 'group_members',
+  schema: (table) => {
+    table.increments('id').primary();
+
+    table.integer('group_id')
+      .unsigned()
+      .references('id')
+      .inTable('groups')
+      .onDelete('CASCADE');
+
+    table.integer('user_id')
+      .unsigned()
+      .references('id')
+      .inTable('users')
+      .onDelete('CASCADE');
+
+    table.string('role').defaultTo('member');
+    table.timestamp('joined_at').defaultTo(db.fn.now());
+  },
+},
+
+{
+  name: 'community_members',
+  schema: (table) => {
+    table.increments('id').primary();
+    table.integer('community_id').unsigned().references('id').inTable('communities').onDelete('CASCADE');
+    table.integer('user_id').unsigned().references('id').inTable('users').onDelete('CASCADE');
+    table.string('role').defaultTo('member');
+    table.timestamp('joined_at').defaultTo(db.fn.now());
+  },
+},
 
       {
   name: 'conversations',
@@ -274,30 +323,48 @@ console.log('[INFO] Tentative de connexion à la base de données PostgreSQL...'
 },
 
 
-
-   {
+{
   name: 'messages',
   schema: (table) => {
     table.increments('id').primary();
 
-    // relations
-    table.integer('conversation_id').unsigned().references('id').inTable('conversations').onDelete('CASCADE');
-    table.integer('community_id').unsigned().references('id').inTable('communities').onDelete('CASCADE').nullable();
-    table.integer('user_id').unsigned().references('id').inTable('users').onDelete('CASCADE');
+    table.integer('conversation_id')
+      .unsigned()
+      .references('id')
+      .inTable('conversations')
+      .onDelete('CASCADE')
+      .nullable();
 
-    // 🔧 NOUVEAU : support type/voice + media
-    table.text('type').defaultTo('text');   // 'text' | 'voice'
-    table.text('content').nullable();       // ← devient NULLABLE (avant: notNullable)
-    table.text('media').nullable();         // images/vidéos éventuelles
-    table.text('voice_url').nullable();     // URL Cloudinary MP3 ou /media/xxx (fallback local)
-    table.decimal('duration', 10, 2).nullable(); // durée en secondes (optionnel)
+    table.integer('community_id')
+      .unsigned()
+      .references('id')
+      .inTable('communities')
+      .onDelete('CASCADE')
+      .nullable();
 
-    // statut/horodatage
+    table.integer('group_id')
+      .unsigned()
+      .references('id')
+      .inTable('groups')
+      .onDelete('CASCADE')
+      .nullable();
+
+    table.integer('user_id')
+      .unsigned()
+      .references('id')
+      .inTable('users')
+      .onDelete('CASCADE');
+
+    table.text('type').defaultTo('text');
+    table.text('content').nullable();
+    table.text('media').nullable();
+    table.text('voice_url').nullable();
+    table.decimal('duration', 10, 2).nullable();
+
     table.boolean('is_read').notNullable().defaultTo(false);
     table.timestamp('created_at').defaultTo(db.fn.now());
   },
 },
-
 
 {
   name: 'chat_messages',
@@ -362,6 +429,28 @@ console.log('[INFO] Tentative de connexion à la base de données PostgreSQL...'
 
 
     // ➜ Migration idempotente : s'assurer que messages.is_read existe
+
+    // 🔥 Ajout colonne group_id dans messages
+try {
+  const hasGroupId = await db.schema.hasColumn('messages', 'group_id');
+
+  if (!hasGroupId) {
+    await db.schema.alterTable('messages', (table) => {
+      table.integer('group_id')
+        .unsigned()
+        .references('id')
+        .inTable('groups')
+        .onDelete('CASCADE')
+        .nullable();
+    });
+
+    console.log('[INFO] Colonne "group_id" ajoutée à messages.');
+  }
+} catch (e) {
+  console.warn('[WARN] Migration group_id messages :', e.message);
+}
+
+
 try {
   const hasIsRead = await db.schema.hasColumn('messages', 'is_read');
   if (!hasIsRead) {

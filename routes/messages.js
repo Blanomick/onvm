@@ -35,9 +35,11 @@ const upload = multer({ storage, limits: { fileSize: 200 * 1024 * 1024 } });
 // ---- Nouveau handler réutilisable + 2 routes (send et racine) ----
 async function handleSendMessage(req, res) {
   try {
-    const { conversation_id } = req.body;
-    const user_id = Number(req.body.user_id || req.body.sender_id);
+   const { conversation_id, group_id } = req.body;
+const user_id = Number(req.body.user_id || req.body.sender_id);
 
+const conversationId = conversation_id ? Number(conversation_id) : null;
+const groupId = group_id ? Number(group_id) : null;
     // 🔧 NOUVEAU : on gère type/voice_url/duration
     const type = (req.body.type || 'text').toLowerCase(); // 'text' | 'voice'
     const voice_url = (req.body.voice_url || '').trim();  // URL Cloudinary MP3 OU /media/xxx (fallback)
@@ -47,9 +49,17 @@ async function handleSendMessage(req, res) {
     // on garde le support fichier pour "media" (images/vidéos) si présent
     const mediaPath = req.file ? `/uploads/${req.file.filename}` : null;
 
-    if (!conversation_id || !user_id) {
-      return res.status(400).json({ error: 'conversation_id et user_id/sender_id requis' });
-    }
+   if ((!conversationId && !groupId) || !user_id) {
+  return res.status(400).json({
+    error: 'conversation_id ou group_id, et user_id/sender_id requis',
+  });
+}
+
+if (conversationId && groupId) {
+  return res.status(400).json({
+    error: 'Impossible d’envoyer avec conversation_id et group_id en même temps',
+  });
+}
 
     // 🔧 VALIDATION selon le type
     if (type === 'text') {
@@ -65,17 +75,18 @@ async function handleSendMessage(req, res) {
     }
 
     // 🔧 INSERT avec nouvelles colonnes
-    const [message] = await db('messages')
-      .insert({
-        conversation_id: Number(conversation_id),
-        user_id,
-        type,                          // <--- NOUVEAU
-        content: type === 'text' ? content : null,
-        media: type === 'text' ? mediaPath : null,
-        voice_url: type === 'voice' ? voice_url : null,  // <--- NOUVEAU
-        duration: type === 'voice' ? duration : null,    // <--- NOUVEAU
-        created_at: new Date(),
-      })
+   const [message] = await db('messages')
+  .insert({
+    conversation_id: conversationId,
+    group_id: groupId,
+    user_id,
+    type,
+    content: type === 'text' ? content : null,
+    media: type === 'text' ? mediaPath : null,
+    voice_url: type === 'voice' ? voice_url : null,
+    duration: type === 'voice' ? duration : null,
+    created_at: new Date(),
+  })
       .returning([
         'id',
         'conversation_id',
@@ -145,6 +156,44 @@ async function handleSendMessage(req, res) {
 router.post('/send', upload.single('media'), handleSendMessage);  // POST /api/messages/send
 router.post('/',     upload.single('media'), handleSendMessage);  // POST /api/messages
 
+
+
+
+
+router.get('/group/:groupId', async (req, res) => {
+  const { groupId } = req.params;
+
+  try {
+    const group = await db('groups').where({ id: groupId }).first();
+
+    if (!group) {
+      return res.status(404).json({ error: 'Groupe introuvable' });
+    }
+
+    const messages = await db('messages')
+      .where({ group_id: groupId })
+      .orderBy('created_at', 'asc')
+      .select(
+        'id',
+        'group_id',
+        'user_id as sender_id',
+        'type',
+        'content',
+        'media',
+        'voice_url',
+        'duration',
+        'created_at'
+      );
+
+    return res.json({
+      group,
+      messages,
+    });
+  } catch (err) {
+    console.error('[ERREUR] Récupération messages groupe :', err);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
 
 /**
  * GET /api/messages/:conversationId
