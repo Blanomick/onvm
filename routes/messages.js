@@ -117,7 +117,10 @@ if (conversationId && groupId) {
               type: 'message',
               entity_type: 'message',
               entity_id: message.id,
-              metadata: { snippet: (snippetBase || '').slice(0, 120) },
+              metadata: {
+  snippet: (snippetBase || "").slice(0, 120),
+  conversation_id: conversationId,
+},
             })
             .onConflict(['type','user_id','actor_id','entity_type','entity_id'])
             .ignore();

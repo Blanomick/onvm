@@ -350,7 +350,7 @@ const ownerId = publication.userId;
 const actor = await db('users').where({ id: userId }).first();
 
 // 🔔 Notif (schéma V2) si ce n’est pas toi-même
-if (ownerId && ownerId !== userId) {
+if (ownerId && String(ownerId) !== String(userId)) {
   await db('notifications')
     .insert({
       user_id: ownerId,                  // destinataire
@@ -433,7 +433,7 @@ router.post('/:publicationId/like', async (req, res) => {
 try {
   const pub = await db('publications').select('userId').where({ id: publicationId }).first();
   const ownerId = pub?.userId;
-  if (ownerId && ownerId !== userId) {
+  if (ownerId && String(ownerId) !== String(userId)) {
     await db('notifications')
       .insert({
         user_id: ownerId,
@@ -542,15 +542,18 @@ try {
 const publication = await db('publications').where({ id: publicationId }).first();
 const ownerId = publication?.userId;
 
-if (ownerId && ownerId !== userId) {
+if (ownerId && String(ownerId) !== String(userId)) {
   await db('notifications')
     .insert({
       user_id: ownerId,
       actor_id: userId,
-      type: 'comment_publication',
-      entity_type: 'publication',
-      entity_id: Number(publicationId),
-      metadata: { snippet: (comment || '').slice(0, 120) },
+     type: "comment_publication",
+entity_type: "comment",
+entity_id: newComment.id,
+metadata: {
+  publication_id: Number(publicationId),
+  snippet: (comment || "").slice(0, 120),
+},
     })
     .onConflict(['type','user_id','actor_id','entity_type','entity_id'])
     .ignore();
