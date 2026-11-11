@@ -1,4 +1,4 @@
-
+require("dotenv").config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -37,14 +37,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(cors({
-  origin: '*', // Autorise toutes les origines
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true // Permet l'envoi des cookies et headers sécurisés
+  origin: [
+    "https://onvm.org",
+    "https://onvme.netlify.app",
+    "http://localhost:3000",
+  ],
+  methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
 }));
-
-// Middleware pour répondre aux requêtes OPTIONS
-app.options('*', cors());
 
 
 
@@ -53,17 +54,17 @@ app.use(express.urlencoded({ extended: true }));
 
 
 // Définir directement les variables importantes dans le fichier
-require('dotenv').config(); // Charge les variables d'environnement
+
 
 const NODE_ENV = process.env.NODE_ENV || 'development'; // Définit l'environnement
 
 // Choix de la base de données
 const DATABASE_URL = process.env.DATABASE_URL;
-const JWT_SECRET = process.env.JWT_SECRET || "monSuperSecret123";
+const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = process.env.PORT || 5000;
 // Logs pour vérifier les valeurs des variables d'environnement
 console.log(`[INFO] Environnement : ${NODE_ENV}`);
-console.log(`[INFO] DATABASE_URL : ${DATABASE_URL}`);
+
 console.log(`[INFO] PORT : ${PORT}`);
 
 if (!DATABASE_URL) {
@@ -126,7 +127,7 @@ const testDatabaseConnection = async () => {
 };
 
 // Appelez cette fonction directement au démarrage
-testDatabaseConnection();
+
 
 
 // Configuration de multer pour la gestion des fichiers
@@ -149,11 +150,17 @@ const upload = multer({
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ['https://onvm.org', 'http://localhost:3000'],
-    methods: ['GET', 'POST'],
+    origin: [
+      "https://onvm.org",
+      "https://onvme.netlify.app",
+      "http://localhost:3000",
+    ],
+    methods: ["GET", "POST"],
     credentials: true,
   },
 });
+
+require("./calls")(io, db);
 
 // Export `io` pour utilisation dans d'autres fichiers
 module.exports.io = io;
@@ -219,22 +226,7 @@ app.get('/api/test', (req, res) => {
 
 
 
-db.raw('SELECT 1')
-  .then(() => console.log('[INFO] PostgreSQL est bien connecté'))
-  .catch(err => console.error('[ERREUR] Impossible de se connecter à PostgreSQL :', err.message));
 
-  server.listen(PORT, async () => {
-    try {
-      console.log(`[INFO] Serveur démarré sur http://localhost:${PORT}`);
-      console.log('[INFO] Initialisation de la base de données...');
-     // await initializeDatabase();
-      console.log('[INFO] Base de données initialisée avec succès.');
-    } catch (err) {
-      console.error(`[ERREUR] Problème lors de l'initialisation : ${err.message}`);
-      process.exit(1);
-    }
-  });
-  
 
 
 // Gestion des erreurs pour les routes non trouvées (404)
@@ -532,4 +524,23 @@ const initializeDatabase = async () => {
 // Gestion des erreurs globales pour la base de données
 db.on('error', (err) => {
   console.error(`[ERREUR] Connexion à la base de données : ${err.message}`);
+});
+
+async function startServer() {
+  await testDatabaseConnection();
+
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`[INFO] Serveur démarré sur le port ${PORT}`);
+    console.log("[INFO] Gestionnaire des appels disponible sur /calls");
+  });
+}
+
+server.on("error", (error) => {
+  console.error("[ERREUR] Démarrage du serveur :", error.message);
+  process.exit(1);
+});
+
+startServer().catch((error) => {
+  console.error("[ERREUR] Démarrage impossible :", error.message);
+  process.exit(1);
 });

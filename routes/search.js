@@ -21,7 +21,7 @@ router.get('/', async (req, res) => {
 
     // Requête pour rechercher des utilisateurs par nom d'utilisateur (insensible à la casse)
     const searchQuery = `
-      SELECT id, username, profilePicture 
+      SELECT id, username, "profilePicture"
       FROM users 
       WHERE username ILIKE ? 
       AND id != ?
