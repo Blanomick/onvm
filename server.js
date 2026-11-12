@@ -161,6 +161,7 @@ const io = new Server(server, {
 });
 
 require("./calls")(io, db);
+const installMessaging = require("./messaging");
 
 // Export `io` pour utilisation dans d'autres fichiers
 module.exports.io = io;
@@ -525,13 +526,16 @@ const initializeDatabase = async () => {
 db.on('error', (err) => {
   console.error(`[ERREUR] Connexion à la base de données : ${err.message}`);
 });
-
 async function startServer() {
   await testDatabaseConnection();
 
+  // Initialise le suivi des lectures et la présence.
+  await installMessaging(io, db);
+
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`[INFO] Serveur démarré sur le port ${PORT}`);
-    console.log("[INFO] Gestionnaire des appels disponible sur /calls");
+    console.log("[INFO] Appels disponibles sur /calls");
+    console.log("[INFO] Présence et lectures disponibles sur /messaging");
   });
 }
 

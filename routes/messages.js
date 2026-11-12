@@ -88,20 +88,23 @@ if (conversationId && groupId) {
     created_at: new Date(),
   })
       .returning([
-        'id',
-        'conversation_id',
-        'user_id',
-        'type',
-        'content',
-        'media',
-        'voice_url',
-        'duration',
-        'created_at',
-      ]);
+  'id',
+  'conversation_id',
+  'group_id',
+  'user_id',
+  'type',
+  'content',
+  'media',
+  'voice_url',
+  'duration',
+  'created_at',
+]);
 
     // notif destinataire (idempotent)
     try {
-      const convo = await db('conversations').where({ id: conversation_id }).first();
+      const convo = conversationId
+  ? await db('conversations').where({ id: conversationId }).first()
+  : null;
       if (convo) {
         const toUserId = (user_id === convo.sender_id) ? convo.receiver_id : convo.sender_id;
         if (toUserId && toUserId !== user_id) {
@@ -130,22 +133,21 @@ if (conversationId && groupId) {
       console.warn('[notifications] message non critique:', e.message);
     }
 
-    // temps réel
-    try {
-      req.io?.to(`chat:${conversation_id}`).emit('chat:message', {
-        id: message.id,
-        conversation_id: message.conversation_id, // utile côté front
-        sender_id: user_id,
-        type: message.type,           // <--- NOUVEAU
-        content: message.content,
-        media: message.media,
-        voice_url: message.voice_url, // <--- NOUVEAU
-        duration: message.duration,   // <--- NOUVEAU
-        created_at: message.created_at,
-      });
-    } catch (e) {
-      console.warn('[socket] emit chat:message:', e.message);
-    }
+    // Diffusion dans la discussion privée ou le groupe concerné.
+try {
+  const chatId = groupId
+    ? `group_${groupId}`
+    : String(conversationId);
+
+  req.io?.to(`chat:${chatId}`).emit('chat:message', {
+    ...message,
+    group_id: groupId,
+    conversation_id: conversationId,
+    sender_id: user_id,
+  });
+} catch (error) {
+  console.warn('[socket] Diffusion message :', error.message);
+}
 
     return res.status(201).json(message);
   } catch (err) {
