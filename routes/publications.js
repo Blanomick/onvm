@@ -27,23 +27,50 @@ if (!fs.existsSync(uploadDir)) {
 const storage = multer.memoryStorage();
 
 
-
 const fileFilter = (req, file, cb) => {
   const allowedTypes = [
-  'image/jpeg','image/jpg','image/png','image/webp','image/gif','image/svg+xml','image/bmp',
-  'video/mp4','video/quicktime','video/x-msvideo','video/webm','video/ogg', // + ogv
-  'audio/mpeg','audio/mp3','audio/wav','audio/ogg','audio/opus','audio/aac','audio/x-m4a','audio/m4a'
-];
+    // Images
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'image/svg+xml',
+    'image/bmp',
 
+    // Vidéos
+    'video/mp4',
+    'video/quicktime',
+    'video/x-msvideo',
+    'video/webm',
+    'video/ogg',
 
-  if (!allowedTypes.includes(file.mimetype)) {
-    console.error('[ERREUR] Type de fichier refusé :', file.mimetype);
+    // Audios
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/ogg',
+    'audio/opus',
+    'audio/aac',
+    'audio/x-m4a',
+    'audio/m4a',
+    'audio/webm',
+    'audio/mp4',
+  ];
+
+  const mimeType = (file.mimetype || '')
+    .split(';')[0]
+    .trim()
+    .toLowerCase();
+
+  if (!allowedTypes.includes(mimeType)) {
+    console.error('[ERREUR] Type de fichier refusé :', mimeType);
+
     return cb(new Error('Type de fichier non autorisé'), false);
   }
 
   cb(null, true);
 };
-
 
 
 
