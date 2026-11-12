@@ -126,21 +126,37 @@ async function saveLocal(file, subfolder = 'onvm_publications') {
 }
 
 // Essaie Cloudinary, sinon bascule en local
-async function storeWithFallback(file, folder) {
-  const ok = await cloudinaryReachable();
-  if (ok) {
-    try {
-      return await uploadToCloudinary(file, folder);
-    } catch (e) {
-      console.error('[WARN] Cloudinary upload failed, fallback to local:', e?.message || e);
-      return await saveLocal(file, folder);
+ async function storeWithFallback(file, folder) {
+  const production =
+    process.env.NODE_ENV === "production" ||
+    process.env.RENDER === "true";
+
+  try {
+    const reachable = await cloudinaryReachable();
+
+    if (!reachable) {
+      throw new Error("Cloudinary est temporairement inaccessible.");
     }
-  } else {
-    console.warn('[WARN] Cloudinary DNS unreachable, saving locally.');
-    return await saveLocal(file, folder);
+
+    return await uploadToCloudinary(file, folder);
+  } catch (error) {
+    console.error(
+      "[MEDIA] Échec du stockage Cloudinary :",
+      error.message
+    );
+
+    // En production, ne pas annoncer un succès avec un fichier
+    // enregistré dans un stockage local potentiellement temporaire.
+    if (production) {
+      throw new Error(
+        "Le stockage des médias est indisponible. Réessaie plus tard."
+      );
+    }
+
+    // Conservation du mode local pour le développement.
+    return saveLocal(file, folder);
   }
 }
-
 
 
 
