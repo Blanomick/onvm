@@ -20,7 +20,10 @@ const conversationsRoutes = require('./routes/conversations');
 const notificationsRoutes = require('./routes/notifications');
 const voiceNotesRoutes = require('./routes/voiceNotes');
 const groupRoutes = require('./routes/groups');
-
+const {
+  initializeSafetyReports,
+  createSafetyReportsRouter,
+} = require("./routes/safetyReports");
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -214,7 +217,7 @@ app.use('/api/conversations', conversationsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/voice-notes', voiceNotesRoutes(io));
 app.use('/api/groups', groupRoutes);
-
+app.use("/api/safety-reports", createSafetyReportsRouter(db));
 
 // Route pour la racine du backend
 app.get('/', (req, res) => {
@@ -527,12 +530,14 @@ const initializeDatabase = async () => {
 db.on('error', (err) => {
   console.error(`[ERREUR] Connexion à la base de données : ${err.message}`);
 });
+
 async function startServer() {
   await testDatabaseConnection();
 
+  await initializeSafetyReports(db);
+
   // Initialise le suivi des lectures et la présence.
   await installMessaging(io, db);
-
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`[INFO] Serveur démarré sur le port ${PORT}`);
     console.log("[INFO] Appels disponibles sur /calls");
