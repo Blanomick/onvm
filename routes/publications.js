@@ -492,7 +492,12 @@ router.post(
       res.status(201).json({ message: 'Publication ajoutée avec succès!', id: newPublication.id });
     } catch (err) {
       console.error('[ERREUR] Erreur lors de la création de la publication:', err);
-      res.status(500).json({ message: 'Erreur lors de la création de la publication.', error: err.message });
+      res.status(500).json({
+        message: cloudinaryConfigured()
+          ? `Erreur lors de la création de la publication : ${err.message}`
+          : 'Stockage des médias non configuré sur le serveur (CLOUDINARY_API_SECRET manquant sur Render).',
+        error: err.message,
+      });
     }
   }
 );
