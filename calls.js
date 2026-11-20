@@ -36,6 +36,7 @@ module.exports = function installCalls(io, db, push) {
     if (!call || calls.get(call.id) !== call) return;
 
     clearTimeout(call.timer);
+    clearInterval(call.ringTimer);
     calls.delete(call.id);
 
     if (busy.get(call.from) === call.id) busy.delete(call.from);
@@ -53,11 +54,12 @@ module.exports = function installCalls(io, db, push) {
           type: "call-end",
           callId: call.id,
           reason,
+          missed: reason !== "declined",
           title: call.peer?.username || "ONVM",
           body:
-            reason === "no-answer" || reason === "disconnected"
+            reason !== "declined"
               ? `Appel ${call.type === "video" ? "vidéo" : "vocal"} manqué`
-              : "Appel terminé",
+              : "Appel refusé",
           url: call.conversationId ? `/chat/${call.conversationId}` : "/conversations",
           tag: `call-${call.id}`,
           ttl: 3600,
@@ -198,9 +200,19 @@ module.exports = function installCalls(io, db, push) {
           peer: user,
         });
 
-        // Fait sonner le téléphone même si l'appli est fermée
+        // Fait sonner le téléphone même si l'appli est fermée :
+        // une notification toutes les 4 s, tant que personne ne décroche
+        // (le téléphone sonne et vibre à chaque fois, comme une sonnerie).
         if (push) {
-          push
+          const expiresAt = Date.now() + 45000;
+          let ring = 0;
+          const sendRing = () => {
+            if (calls.get(callId) !== call || call.state !== "ringing") {
+              clearInterval(call.ringTimer);
+              return;
+            }
+            ring += 1;
+            push
             .sendToUser(otherId, {
               type: "call",
               callId,
@@ -214,9 +226,14 @@ module.exports = function installCalls(io, db, push) {
               userId: otherId,
               sig: push.declineSignature(callId, otherId),
               tag: `call-${callId}`,
-              ttl: 45,
+              ttl: Math.max(1, Math.ceil((expiresAt - Date.now()) / 1000)),
+              expiresAt: String(expiresAt),
+              ring: String(ring),
             })
             .catch(() => {});
+          };
+          sendRing();
+          call.ringTimer = setInterval(sendRing, 4000);
         }
 
         ack({ ok: true, peer: other });
@@ -243,7 +260,25 @@ module.exports = function installCalls(io, db, push) {
       call.calleeSocket = socket.id;
       call.state = "accepted";
 
+      clearInterval(call.ringTimer);
       clearTimeout(call.timer);
+
+      // Ferme la notification qui sonne sur les autres appareils
+      if (push) {
+        push
+          .sendToUser(user.id, {
+            type: "call-end",
+            callId,
+            reason: "answered",
+            missed: false,
+            silent: true,
+            title: call.peer?.username || "ONVM",
+            body: "Appel en cours",
+            tag: `call-${callId}`,
+            ttl: 60,
+          })
+          .catch(() => {});
+      }
       call.timer = setTimeout(() => finish(call, "connection-failed"), 45000);
 
       // Les autres onglets du destinataire cessent de sonner.
@@ -282,6 +317,21 @@ module.exports = function installCalls(io, db, push) {
       namespace
         .to(caller ? call.calleeSocket : call.callerSocket)
         .emit("call:signal", { callId, description, candidate });
+    });
+
+    // Qualité vidéo choisie par l'un : l'autre adapte ce qu'il envoie
+    socket.on("call:quality", ({ callId, quality } = {}) => {
+      const call = calls.get(callId);
+      if (!call || call.state !== "accepted") return;
+      if (!["360", "720", "1080", "2160"].includes(String(quality))) return;
+
+      const caller = socket.id === call.callerSocket;
+      const callee = socket.id === call.calleeSocket;
+      if (!caller && !callee) return;
+
+      namespace
+        .to(caller ? call.calleeSocket : call.callerSocket)
+        .emit("call:quality", { callId, quality: String(quality) });
     });
 
     socket.on("call:connected", ({ callId } = {}) => {

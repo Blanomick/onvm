@@ -247,8 +247,20 @@ async function sendFcm(sub, message) {
       android: {
         priority: 'high',
         ttl: `${message.ttl || 86400}s`,
+        // Fin d'appel : remplace la notification qui sonne (même « tag »),
+        // ce qui arrête la sonnerie. « Appel manqué » ou version silencieuse.
         ...(message.type === 'call-end'
-          ? {}
+          ? {
+              notification: {
+                title: message.title,
+                body: message.body,
+                channel_id: message.missed ? 'onvm_messages' : 'onvm_silent',
+                tag: message.tag || undefined,
+                ...(message.missed ? { sound: 'default' } : {}),
+                notification_priority: message.missed ? 'PRIORITY_DEFAULT' : 'PRIORITY_LOW',
+                visibility: 'PUBLIC',
+              },
+            }
           : {
               notification: {
                 title: message.title,
@@ -256,7 +268,10 @@ async function sendFcm(sub, message) {
                 channel_id: isCall ? 'onvm_calls' : 'onvm_messages',
                 tag: message.tag || undefined,
                 sound: 'default',
-                default_vibrate_timings: true,
+                default_vibrate_timings: !isCall,
+                ...(isCall
+                  ? { vibrate_timings: ['0s', '0.8s', '0.4s', '0.8s', '0.4s', '0.8s'] }
+                  : {}),
                 notification_priority: isCall ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',
                 visibility: 'PUBLIC',
               },
