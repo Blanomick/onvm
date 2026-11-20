@@ -369,8 +369,41 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-router.put('/:id/profile-picture', upload.single('profilePicture'), async (req, res) => {
+const jwtForAvatar = require('jsonwebtoken');
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/^image\//i.test(file.mimetype || '')) return cb(null, true);
+    cb(new Error('Choisis une image (JPG, PNG, WEBP…).'));
+  },
+}).single('profilePicture');
+
+router.put('/:id/profile-picture', (req, res, next) => {
+  avatarUpload(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === 'LIMIT_FILE_SIZE'
+      ? 'Image trop lourde (15 Mo maximum).'
+      : err.message || 'Image refusée.';
+    return res.status(400).json({ message });
+  });
+}, async (req, res) => {
   const userId = req.params.id;
+
+  // Seul le propriétaire du compte peut changer sa photo
+  const token = (req.header('Authorization') || '').replace(/^Bearer\s+/i, '');
+  let tokenUserId = null;
+  try {
+    tokenUserId = jwtForAvatar.verify(token, process.env.JWT_SECRET)?.id;
+  } catch {
+    tokenUserId = null;
+  }
+  if (!tokenUserId) {
+    return res.status(401).json({ message: 'Ta session a expiré. Reconnecte-toi.' });
+  }
+  if (String(tokenUserId) !== String(userId)) {
+    return res.status(403).json({ message: 'Tu ne peux changer que ta propre photo.' });
+  }
 
   if (!req.file) {
     return res.status(400).json({ message: 'La photo de profil est requise.' });
@@ -380,7 +413,11 @@ router.put('/:id/profile-picture', upload.single('profilePicture'), async (req, 
     // 📤 Upload vers Cloudinary
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
-        { folder: 'onvm_profiles' },
+        {
+          folder: 'onvm_profiles',
+          resource_type: 'image',
+          transformation: [{ width: 640, height: 640, crop: 'fill', gravity: 'auto', quality: 'auto', fetch_format: 'jpg' }],
+        },
         (error, result) => {
           if (error) return reject(error);
           resolve(result);
@@ -401,7 +438,12 @@ router.put('/:id/profile-picture', upload.single('profilePicture'), async (req, 
 
   } catch (err) {
     console.error('[ERREUR] Erreur Cloudinary :', err);
-    res.status(500).json({ message: 'Erreur lors de l\'upload vers Cloudinary.', error: err.message });
+    res.status(500).json({
+      message: !process.env.CLOUDINARY_API_SECRET
+        ? 'Stockage des images non configuré sur le serveur (CLOUDINARY_API_SECRET).'
+        : 'Envoi de la photo impossible pour le moment. Réessaie.',
+      error: err.message,
+    });
   }
 });
 

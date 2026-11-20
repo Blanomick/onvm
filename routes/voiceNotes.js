@@ -166,6 +166,30 @@ playUrl = cloudName
    return res.status(500).json({ error: "Échec de l'enregistrement du message vocal" });
 }
 
+      // Notification (et push) pour le destinataire
+      try {
+        const convo = await db("conversations").where({ id: convId }).first();
+        if (convo) {
+          const toUserId =
+            Number(convo.sender_id) === Number(userId) ? convo.receiver_id : convo.sender_id;
+          if (toUserId && Number(toUserId) !== Number(userId)) {
+            await db("notifications")
+              .insert({
+                user_id: toUserId,
+                actor_id: Number(userId),
+                type: "message",
+                entity_type: "message",
+                entity_id: inserted[0].id,
+                metadata: { snippet: "[vocal]", conversation_id: Number(convId) },
+              })
+              .onConflict(["type", "user_id", "actor_id", "entity_type", "entity_id"])
+              .ignore();
+          }
+        }
+      } catch (e) {
+        console.warn("[voice-notes] notification non critique :", e.message);
+      }
+
       // 4) Temps réel (socket)
       const payload = {
 

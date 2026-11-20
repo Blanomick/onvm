@@ -180,7 +180,8 @@ const io = new Server(server, {
   },
 });
 
-require("./calls")(io, db);
+const push = require("./push");
+const callsApi = require("./calls")(io, db, push);
 const installMessaging = require("./messaging");
 
 // Export `io` pour utilisation dans d'autres fichiers
@@ -235,6 +236,7 @@ app.use('/api/voice-notes', voiceNotesRoutes(io));
 app.use('/api/groups', groupRoutes);
 app.use("/api/safety-reports", createSafetyReportsRouter(db));
 app.use('/api/ota', require('./routes/ota')); // Mises à jour OTA de l'appli Android
+app.use('/api/push', push.createRouter(callsApi)); // Notifications même appli fermée
 
 // Route pour la racine du backend
 app.get('/', (req, res) => {
@@ -552,6 +554,9 @@ async function startServer() {
   await testDatabaseConnection();
 
   await initializeSafetyReports(db);
+
+  // Notifications push (appels, messages, activité)
+  await push.init(db);
 
   // Initialise le suivi des lectures et la présence.
   await installMessaging(io, db);

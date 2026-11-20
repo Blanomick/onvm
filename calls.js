@@ -2,7 +2,7 @@
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
-module.exports = function installCalls(io, db) {
+module.exports = function installCalls(io, db, push) {
   const namespace = io.of("/calls");
   const calls = new Map();
   const busy = new Map();
@@ -45,6 +45,25 @@ module.exports = function installCalls(io, db) {
       .to(room(call.from))
       .to(room(call.to))
       .emit("call:ended", { callId: call.id, reason });
+
+    // Arrête la sonnerie sur le téléphone du destinataire
+    if (push && call.state === "ringing") {
+      push
+        .sendToUser(call.to, {
+          type: "call-end",
+          callId: call.id,
+          reason,
+          title: call.peer?.username || "ONVM",
+          body:
+            reason === "no-answer" || reason === "disconnected"
+              ? `Appel ${call.type === "video" ? "vidéo" : "vocal"} manqué`
+              : "Appel terminé",
+          url: call.conversationId ? `/chat/${call.conversationId}` : "/conversations",
+          tag: `call-${call.id}`,
+          ttl: 3600,
+        })
+        .catch(() => {});
+    }
   }
 
   function participant(socket, call) {
@@ -81,6 +100,17 @@ module.exports = function installCalls(io, db) {
   namespace.on("connection", (socket) => {
     const user = socket.data.user;
     socket.join(room(user.id));
+
+    // Appli ouverte depuis la notification : on renvoie l'appel qui sonne encore
+    const pending = calls.get(busy.get(user.id));
+    if (pending && pending.state === "ringing" && pending.to === user.id) {
+      socket.emit("call:incoming", {
+        callId: pending.id,
+        conversationId: pending.conversationId,
+        type: pending.type,
+        peer: pending.peer,
+      });
+    }
 
     socket.on("call:config", (_, ack) => {
       if (typeof ack === "function") {
@@ -143,10 +173,6 @@ module.exports = function installCalls(io, db) {
           throw new Error("Un des participants est déjà en appel.");
         }
 
-        if (!namespace.adapter.rooms.get(room(otherId))?.size) {
-          throw new Error("Ce contact n’est pas connecté aux appels.");
-        }
-
         const call = {
           id: callId,
           from: user.id,
@@ -156,6 +182,7 @@ module.exports = function installCalls(io, db) {
           state: "ringing",
           type,
           conversationId,
+          peer: user,
         };
 
         calls.set(callId, call);
@@ -170,6 +197,27 @@ module.exports = function installCalls(io, db) {
           type,
           peer: user,
         });
+
+        // Fait sonner le téléphone même si l'appli est fermée
+        if (push) {
+          push
+            .sendToUser(otherId, {
+              type: "call",
+              callId,
+              callType: type,
+              conversationId,
+              title: user.username || "ONVM",
+              body: type === "video" ? "📹 Appel vidéo entrant…" : "📞 Appel vocal entrant…",
+              icon: /^https:/.test(user.profilePicture || "") ? user.profilePicture : undefined,
+              url: `/conversations?call=${callId}`,
+              answerUrl: `/conversations?answer=${callId}`,
+              userId: otherId,
+              sig: push.declineSignature(callId, otherId),
+              tag: `call-${callId}`,
+              ttl: 45,
+            })
+            .catch(() => {});
+        }
 
         ack({ ok: true, peer: other });
       } catch (error) {
@@ -270,18 +318,23 @@ module.exports = function installCalls(io, db) {
       const call = calls.get(busy.get(user.id));
       if (!call) return;
 
+      // Le destinataire hors ligne n'arrête plus l'appel :
+      // son téléphone sonne par notification jusqu'à 45 s.
       if (
         socket.id === call.callerSocket ||
         socket.id === call.calleeSocket
       ) {
         finish(call, "disconnected");
-      } else if (
-        call.state === "ringing" &&
-        user.id === call.to &&
-        !namespace.adapter.rooms.get(room(user.id))?.size
-      ) {
-        finish(call, "disconnected");
       }
     });
   });
+
+  return {
+    decline(callId, userId) {
+      const call = calls.get(callId);
+      if (call && call.state === "ringing" && call.to === userId) {
+        finish(call, "declined");
+      }
+    },
+  };
 };

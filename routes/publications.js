@@ -204,6 +204,9 @@ const cloudinaryConfigured = () =>
     process.env.CLOUDINARY_API_SECRET
   );
 
+const VIDEO_EAGER =
+  'vc_h264,ac_aac,q_auto,c_limit,w_1080,h_1920/mp4|so_0,c_limit,w_720,h_1280,q_auto/jpg';
+
 // Signature pour l'envoi direct navigateur -> Cloudinary
 // (le fichier ne passe plus par la mémoire du serveur)
 router.get('/upload-signature', (req, res) => {
@@ -217,19 +220,38 @@ router.get('/upload-signature', (req, res) => {
 
   const folder = 'onvm_publications';
   const timestamp = Math.round(Date.now() / 1000);
+  const params = { folder, timestamp };
+
+  // Vidéos : conversion automatique en MP4 lisible partout (iPhone, Android,
+  // navigateurs) + image d'aperçu, préparées en arrière-plan par Cloudinary.
+  if (req.query.kind === 'video') {
+    params.eager = VIDEO_EAGER;
+    params.eager_async = 'true';
+  }
+
   const signature = cloudinary.utils.api_sign_request(
-    { folder, timestamp },
+    params,
     process.env.CLOUDINARY_API_SECRET
   );
 
   res.json({
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
     apiKey: process.env.CLOUDINARY_API_KEY,
-    folder,
-    timestamp,
+    ...params,
     signature,
   });
 });
+
+function isCloudinaryUrl(value) {
+  try {
+    const u = new URL(String(value));
+    const cloud = process.env.CLOUDINARY_CLOUD_NAME;
+    return u.protocol === 'https:' && u.hostname === 'res.cloudinary.com' &&
+      (!cloud || u.pathname.startsWith(`/${cloud}/`));
+  } catch {
+    return false;
+  }
+}
 
 // Médias déjà envoyés sur Cloudinary : on n'accepte que des URL Cloudinary
 function cleanRemoteMedia(list) {
@@ -251,7 +273,8 @@ function cleanRemoteMedia(list) {
     .map((m) => ({
       url: m.url,
       kind: ['image', 'video', 'audio'].includes(m.kind) ? m.kind : 'other',
-      ...(m.thumbnail ? { thumbnail: String(m.thumbnail) } : {}),
+      ...(m.thumbnail && isCloudinaryUrl(m.thumbnail) ? { thumbnail: String(m.thumbnail) } : {}),
+      ...(m.mp4Url && isCloudinaryUrl(m.mp4Url) ? { mp4Url: String(m.mp4Url) } : {}),
       ...(m.width ? { width: Number(m.width) || null } : {}),
       ...(m.height ? { height: Number(m.height) || null } : {}),
       ...(m.duration ? { duration: Number(m.duration) || null } : {}),
