@@ -234,6 +234,7 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/voice-notes', voiceNotesRoutes(io));
 app.use('/api/groups', groupRoutes);
 app.use("/api/safety-reports", createSafetyReportsRouter(db));
+app.use('/api/ota', require('./routes/ota')); // Mises à jour OTA de l'appli Android
 
 // Route pour la racine du backend
 app.get('/', (req, res) => {
