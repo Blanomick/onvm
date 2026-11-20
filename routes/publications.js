@@ -37,6 +37,8 @@ const fileFilter = (req, file, cb) => {
     'image/gif',
     'image/svg+xml',
     'image/bmp',
+    'image/heic',
+    'image/heif',
 
     // Vidéos
     'video/mp4',
@@ -44,6 +46,9 @@ const fileFilter = (req, file, cb) => {
     'video/x-msvideo',
     'video/webm',
     'video/ogg',
+    'video/3gpp',
+    'video/x-matroska',
+    'video/x-m4v',
 
     // Audios
     'audio/mpeg',
@@ -160,20 +165,253 @@ async function saveLocal(file, subfolder = 'onvm_publications') {
 
 
 
-// Création de publication
+const jwt = require('jsonwebtoken');
 
-// Création de publication// Création de publication (multi-fichiers)
+// Identifie l'utilisateur à partir du jeton (si présent et valide)
+function userIdFromToken(req) {
+  const header = req.header('Authorization') || '';
+  const token = header.replace(/^Bearer\s+/i, '');
+  if (!token || !process.env.JWT_SECRET) return null;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return decoded?.id ? Number(decoded.id) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Transforme les erreurs multer en messages clairs (au lieu de "Erreur interne")
+function withUpload(middleware) {
+  return (req, res, next) => {
+    middleware(req, res, (err) => {
+      if (!err) return next();
+      console.error('[UPLOAD] Erreur multer :', err.code || '', err.message);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ message: 'Fichier trop volumineux.' });
+      }
+      if (err.code === 'LIMIT_UNEXPECTED_FILE' || err.code === 'LIMIT_FILE_COUNT') {
+        return res.status(400).json({ message: 'Trop de fichiers (5 maximum).' });
+      }
+      return res.status(400).json({ message: err.message || 'Fichier refusé.' });
+    });
+  };
+}
+
+const cloudinaryConfigured = () =>
+  Boolean(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+  );
+
+// Signature pour l'envoi direct navigateur -> Cloudinary
+// (le fichier ne passe plus par la mémoire du serveur)
+router.get('/upload-signature', (req, res) => {
+  const tokenUserId = userIdFromToken(req);
+  if (!tokenUserId) {
+    return res.status(401).json({ message: 'Reconnecte-toi pour publier.' });
+  }
+  if (!cloudinaryConfigured()) {
+    return res.status(503).json({ message: 'Cloudinary non configuré.' });
+  }
+
+  const folder = 'onvm_publications';
+  const timestamp = Math.round(Date.now() / 1000);
+  const signature = cloudinary.utils.api_sign_request(
+    { folder, timestamp },
+    process.env.CLOUDINARY_API_SECRET
+  );
+
+  res.json({
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+    apiKey: process.env.CLOUDINARY_API_KEY,
+    folder,
+    timestamp,
+    signature,
+  });
+});
+
+// Médias déjà envoyés sur Cloudinary : on n'accepte que des URL Cloudinary
+function cleanRemoteMedia(list) {
+  if (!Array.isArray(list)) return [];
+  const cloud = process.env.CLOUDINARY_CLOUD_NAME;
+  return list
+    .filter((m) => m && typeof m.url === 'string')
+    .filter((m) => {
+      try {
+        const u = new URL(m.url);
+        return u.protocol === 'https:' &&
+          u.hostname === 'res.cloudinary.com' &&
+          (!cloud || u.pathname.startsWith(`/${cloud}/`));
+      } catch {
+        return false;
+      }
+    })
+    .slice(0, 5)
+    .map((m) => ({
+      url: m.url,
+      kind: ['image', 'video', 'audio'].includes(m.kind) ? m.kind : 'other',
+      ...(m.thumbnail ? { thumbnail: String(m.thumbnail) } : {}),
+      ...(m.width ? { width: Number(m.width) || null } : {}),
+      ...(m.height ? { height: Number(m.height) || null } : {}),
+      ...(m.duration ? { duration: Number(m.duration) || null } : {}),
+    }));
+}
+
+function parseMedia(publication) {
+  const raw = publication.media;
+  try {
+    if (raw == null) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') {
+      const s = raw.trim();
+      if (s.startsWith('[') || s.startsWith('{')) {
+        const parsed = JSON.parse(s);
+        return Array.isArray(parsed) ? parsed : (parsed?.url ? [parsed] : []);
+      }
+      return [{ url: s, kind: publication.mediatype || null }];
+    }
+  } catch {
+    return raw ? [{ url: String(raw), kind: publication.mediatype || null }] : [];
+  }
+  return [];
+}
+
+function isVideoMedia(m) {
+  if (!m?.url) return false;
+  if (m.kind === 'video') return true;
+  return /\.(mp4|webm|mov|m4v|ogv|3gp)(\?|$)/i.test(m.url);
+}
+
+// Fil vidéo façon TikTok / Reels : publications contenant une vidéo
+// GET /api/publications/videos?userId=..&before=<id>&limit=8
+router.get('/videos', async (req, res) => {
+  const userId = Number(req.query.userId) || null;
+  const before = Number(req.query.before) || null;
+  const limit = Math.min(Math.max(Number(req.query.limit) || 8, 1), 20);
+
+  try {
+    const collected = [];
+    let cursor = before;
+    let scanned = 0;
+    let exhausted = false;
+
+    // On parcourt les publications par paquets jusqu'à avoir assez de vidéos
+    while (collected.length < limit && scanned < 400) {
+      const q = db('publications')
+        .select(
+          'publications.id',
+          'publications.userId',
+          'publications.content',
+          'publications.media',
+          'publications.mediatype',
+          'publications.created_at',
+          'users.username',
+          'users.profilePicture'
+        )
+        .leftJoin('users', 'publications.userId', 'users.id')
+        .whereNotNull('publications.media')
+        .orderBy('publications.id', 'desc')
+        .limit(50);
+      if (cursor) q.where('publications.id', '<', cursor);
+
+      const rows = await q;
+      if (!rows.length) { exhausted = true; break; }
+      scanned += rows.length;
+      cursor = rows[rows.length - 1].id;
+
+      for (const row of rows) {
+        const media = parseMedia(row);
+        const video = media.find(isVideoMedia);
+        if (!video) continue;
+        collected.push({ ...row, media, video });
+        if (collected.length >= limit) break;
+      }
+      if (rows.length < 50) { exhausted = collected.length < limit; if (exhausted) break; }
+    }
+
+    const ids = collected.map((p) => p.id);
+    let likeCounts = {};
+    let commentCounts = {};
+    let liked = new Set();
+
+    if (ids.length) {
+      const likes = await db('likes')
+        .select('publicationId')
+        .count('* as n')
+        .whereIn('publicationId', ids)
+        .groupBy('publicationId');
+      likes.forEach((r) => { likeCounts[r.publicationId] = Number(r.n); });
+
+      const comments = await db('commentaires')
+        .select('publicationId')
+        .count('* as n')
+        .whereIn('publicationId', ids)
+        .groupBy('publicationId');
+      comments.forEach((r) => { commentCounts[r.publicationId] = Number(r.n); });
+
+      if (userId) {
+        const mine = await db('likes')
+          .select('publicationId')
+          .where({ userId })
+          .whereIn('publicationId', ids);
+        liked = new Set(mine.map((r) => r.publicationId));
+      }
+    }
+
+    const items = collected.map((p) => ({
+      id: p.id,
+      userId: p.userId,
+      username: p.username,
+      profilePicture: p.profilePicture,
+      content: p.content,
+      created_at: p.created_at,
+      media: p.media,
+      video: p.video,
+      likeCount: likeCounts[p.id] || 0,
+      commentCount: commentCounts[p.id] || 0,
+      userHasLiked: liked.has(p.id),
+    }));
+
+    const last = collected[collected.length - 1];
+    res.json({
+      items,
+      nextCursor: !exhausted && last ? last.id : null,
+    });
+  } catch (err) {
+    console.error('[ERREUR] Fil vidéo :', err);
+    res.status(500).json({ message: 'Impossible de charger les vidéos.' });
+  }
+});
+
+// Retirer un like
+router.delete('/:publicationId/like', async (req, res) => {
+  const { publicationId } = req.params;
+  const userId = req.body?.userId || req.query.userId;
+  if (!userId) {
+    return res.status(400).json({ message: "L'ID de l'utilisateur est requis." });
+  }
+  try {
+    await db('likes').where({ userId, publicationId }).del();
+    res.status(200).json({ message: 'Like retiré.' });
+  } catch (err) {
+    console.error('[ERREUR] Retrait du like :', err);
+    res.status(500).json({ message: 'Erreur lors du retrait du like.' });
+  }
+});
+
+// Création de publication (multi-fichiers)
 // Création de publication (multi-fichiers, accepte media | media[] | file | files)
 router.post(
   '/',
-  upload.fields([
+  withUpload(upload.fields([
     { name: 'media', maxCount: 5 },
     { name: 'media[]', maxCount: 5 },
     { name: 'file', maxCount: 5 },
     { name: 'files', maxCount: 5 },
-  ]),
+  ])),
   async (req, res) => {
-    const userId = parseInt(req.body.userId, 10);
+    const userId = userIdFromToken(req) || parseInt(req.body.userId, 10);
     const content = req.body.content || null;
 
     // Tolérant sur les noms de champs
@@ -186,18 +424,26 @@ router.post(
 
     console.log('[DEBUG] champs fichier reçus (create):', Object.keys(req.files || {}));
 
-    if (!userId || (!content && mediaFiles.length === 0)) {
+    // Médias déjà envoyés directement sur Cloudinary par le navigateur (JSON)
+    let remoteMedia = req.body.remoteMedia;
+    if (typeof remoteMedia === 'string') {
+      try { remoteMedia = JSON.parse(remoteMedia); } catch { remoteMedia = []; }
+    }
+    remoteMedia = cleanRemoteMedia(remoteMedia);
+
+    if (!userId || (!content && mediaFiles.length === 0 && remoteMedia.length === 0)) {
       return res.status(400).json({ message: 'Veuillez ajouter un texte ou un fichier média.' });
     }
 
     // Upload (Cloudinary si dispo, sinon local) pour chaque fichier
-    const uploads = [];
+    const uploads = [...remoteMedia];
     try {
       for (const f of mediaFiles) {
         const url = await storeWithFallback(f, 'onvm_publications');
 
         let kind = null;
-        if (f.mimetype.startsWith('image/')) kind = 'image';
+        if (!f.mimetype) kind = 'other';
+        else if (f.mimetype.startsWith('image/')) kind = 'image';
         else if (f.mimetype.startsWith('video/')) kind = 'video';
         else if (f.mimetype.startsWith('audio/')) kind = 'audio';
         else kind = 'other';
@@ -553,10 +799,10 @@ router.delete('/:publicationId', async (req, res) => {
 // Commentaire: accepte texte OU media(image/vidéo) OU audio
 router.post(
   '/:publicationId/comment',
-  upload.fields([
+  withUpload(upload.fields([
     { name: 'media', maxCount: 1 },
     { name: 'audio', maxCount: 1 },
-  ]),
+  ])),
   async (req, res) => {
     const { publicationId } = req.params;
     const { userId } = req.body;
