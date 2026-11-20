@@ -53,9 +53,11 @@ const ALLOWED_ORIGINS = [
 ];
 // Aperçus Netlify (ex : https://deploy-preview-12--onv.netlify.app)
 const NETLIFY_PREVIEW = /^https:\/\/[a-z0-9-]+--(onv|onvme)\.netlify\.app$/i;
+// Site ONVM hébergé sur Render (ex : https://onvm-frontend.onrender.com)
+const RENDER_SITE = /^https:\/\/onvm[a-z0-9-]*\.onrender\.com$/i;
 
 function originAllowed(origin, callback) {
-  if (!origin || ALLOWED_ORIGINS.includes(origin) || NETLIFY_PREVIEW.test(origin)) {
+  if (!origin || ALLOWED_ORIGINS.includes(origin) || NETLIFY_PREVIEW.test(origin) || RENDER_SITE.test(origin)) {
     return callback(null, true);
   }
   console.warn(`[CORS] Origine refusée : ${origin}`);
