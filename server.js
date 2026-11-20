@@ -1,4 +1,15 @@
 require("dotenv").config();
+
+// Tolère la clé Cloudinary mal nommée sur Render (« UDINARY_API_SECRET »)
+if (!process.env.CLOUDINARY_API_SECRET) {
+  const fallback = process.env.UDINARY_API_SECRET || process.env.CLOUDINARY_SECRET;
+  if (fallback) {
+    process.env.CLOUDINARY_API_SECRET = fallback;
+    console.warn("[CONFIG] CLOUDINARY_API_SECRET absent : clé UDINARY_API_SECRET utilisée à la place.");
+  } else {
+    console.error("[CONFIG] CLOUDINARY_API_SECRET absent : aucun envoi de photo ou vidéo ne fonctionnera.");
+  }
+}
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
