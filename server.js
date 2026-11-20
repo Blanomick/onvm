@@ -39,13 +39,31 @@ const app = express();
 app.use(express.json()); 
 app.use(express.urlencoded({ extended: true }));
 
-app.use(cors({
- origin: [
+// Adresses autorisées à appeler le serveur (site Netlify, domaine, appli mobile)
+const ALLOWED_ORIGINS = [
   "https://onvm.org",
+  "https://www.onvm.org",
+  "https://onv.netlify.app",
   "https://onvme.netlify.app",
   "http://localhost:3000",
   "https://localhost",
-],
+  "http://localhost",
+  "capacitor://localhost",
+  ...(process.env.EXTRA_ORIGINS || "").split(",").map((o) => o.trim()).filter(Boolean),
+];
+// Aperçus Netlify (ex : https://deploy-preview-12--onv.netlify.app)
+const NETLIFY_PREVIEW = /^https:\/\/[a-z0-9-]+--(onv|onvme)\.netlify\.app$/i;
+
+function originAllowed(origin, callback) {
+  if (!origin || ALLOWED_ORIGINS.includes(origin) || NETLIFY_PREVIEW.test(origin)) {
+    return callback(null, true);
+  }
+  console.warn(`[CORS] Origine refusée : ${origin}`);
+  return callback(null, false);
+}
+
+app.use(cors({
+ origin: originAllowed,
   methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
@@ -154,11 +172,7 @@ const upload = multer({
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: [
-      "https://onvm.org",
-      "https://onvme.netlify.app",
-      "http://localhost:3000",
-    ],
+    origin: originAllowed,
     methods: ["GET", "POST"],
     credentials: true,
   },
