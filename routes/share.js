@@ -48,7 +48,7 @@ function linkFor(type, id) {
 }
 
 function absolute(req, url) {
-  if (!url) return null;
+  if (!url || /default-profile\.(png|svg)/i.test(url)) return null;
   if (/^https?:\/\//i.test(url)) return url;
   const base = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
   return `${base}${url.startsWith('/') ? '' : '/'}${url}`;
