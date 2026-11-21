@@ -9,10 +9,67 @@ module.exports = function installCalls(io, db, push) {
 
   const room = (id) => `user:${id}`;
 
-  function iceServers(userId) {
-    const servers = [{ urls: "stun:stun.l.google.com:19302" }];
+  // Serveurs relais (TURN) : indispensables quand les deux téléphones ne
+  // peuvent pas se joindre directement (réseau mobile, autre pays…).
+  // C'est ce que font WhatsApp, Messenger, etc. Sans relais, l'appel échoue.
+  //
+  // 1. Cloudflare (gratuit jusqu'à 1000 Go/mois) :
+  //    CLOUDFLARE_TURN_KEY_ID + CLOUDFLARE_TURN_API_TOKEN
+  // 2. Ou ton propre coturn : TURN_URLS + TURN_SECRET
+  // 3. Ou n'importe quel relais : TURN_URLS + TURN_USERNAME + TURN_CREDENTIAL
+  let cloudflareCache = { servers: null, exp: 0 };
 
-    // Configuration d’un serveur coturn avec identifiants temporaires.
+  async function cloudflareServers() {
+    const keyId = process.env.CLOUDFLARE_TURN_KEY_ID;
+    const token = process.env.CLOUDFLARE_TURN_API_TOKEN;
+    if (!keyId || !token) return [];
+    if (cloudflareCache.servers && Date.now() < cloudflareCache.exp) {
+      return cloudflareCache.servers;
+    }
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(
+        `https://rtc.live.cloudflare.com/v1/turn/keys/${keyId}/credentials/generate-ice-servers`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ ttl: 86400 }),
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(timer);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(`Cloudflare ${response.status}`);
+      let servers = Array.isArray(data.iceServers)
+        ? data.iceServers
+        : data.iceServers
+        ? [data.iceServers]
+        : [];
+      // Le port 53 est souvent bloqué par les navigateurs : on le retire
+      servers = servers
+        .map((server) => ({
+          ...server,
+          urls: (Array.isArray(server.urls) ? server.urls : [server.urls]).filter(
+            (url) => url && !/:53(\?|$)/.test(url)
+          ),
+        }))
+        .filter((server) => server.urls.length);
+      cloudflareCache = { servers, exp: Date.now() + 12 * 3600 * 1000 };
+      return servers;
+    } catch (error) {
+      console.warn("[CALLS] Relais Cloudflare indisponible :", error.message);
+      return cloudflareCache.servers || [];
+    }
+  }
+
+  async function iceServers(userId) {
+    const servers = [
+      { urls: ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"] },
+    ];
+
+    servers.push(...(await cloudflareServers()));
+
     const urls = (process.env.TURN_URLS || "")
       .split(",")
       .map((value) => value.trim())
@@ -25,10 +82,21 @@ module.exports = function installCalls(io, db, push) {
         .createHmac("sha1", process.env.TURN_SECRET)
         .update(username)
         .digest("base64");
-
       servers.push({ urls, username, credential });
+    } else if (urls.length && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+      servers.push({
+        urls,
+        username: process.env.TURN_USERNAME,
+        credential: process.env.TURN_CREDENTIAL,
+      });
     }
 
+    if (servers.length === 1 && !iceServers.warned) {
+      iceServers.warned = true;
+      console.warn(
+        "[CALLS] AUCUN relais TURN configuré : les appels échoueront entre réseaux mobiles / pays différents."
+      );
+    }
     return servers;
   }
 
@@ -36,6 +104,7 @@ module.exports = function installCalls(io, db, push) {
     if (!call || calls.get(call.id) !== call) return;
 
     clearTimeout(call.timer);
+    clearTimeout(call.graceTimer);
     clearInterval(call.ringTimer);
     calls.delete(call.id);
 
@@ -114,9 +183,9 @@ module.exports = function installCalls(io, db, push) {
       });
     }
 
-    socket.on("call:config", (_, ack) => {
+    socket.on("call:config", async (_, ack) => {
       if (typeof ack === "function") {
-        ack({ ok: true, iceServers: iceServers(user.id) });
+        ack({ ok: true, iceServers: await iceServers(user.id) });
       }
     });
 
@@ -323,7 +392,7 @@ module.exports = function installCalls(io, db, push) {
     socket.on("call:quality", ({ callId, quality } = {}) => {
       const call = calls.get(callId);
       if (!call || call.state !== "accepted") return;
-      if (!["360", "720", "1080", "2160"].includes(String(quality))) return;
+      if (!["auto", "360", "720", "1080", "2160"].includes(String(quality))) return;
 
       const caller = socket.id === call.callerSocket;
       const callee = socket.id === call.calleeSocket;
@@ -371,11 +440,40 @@ module.exports = function installCalls(io, db, push) {
       // Le destinataire hors ligne n'arrête plus l'appel :
       // son téléphone sonne par notification jusqu'à 45 s.
       if (
-        socket.id === call.callerSocket ||
-        socket.id === call.calleeSocket
+        socket.id !== call.callerSocket &&
+        socket.id !== call.calleeSocket
       ) {
-        finish(call, "disconnected");
+        return;
       }
+
+      // Appel en cours : l'image passe directement entre les téléphones,
+      // une coupure du serveur ne doit pas raccrocher. On laisse 30 s au
+      // téléphone pour revenir (réseau faible, changement 4G/Wi-Fi…).
+      if (call.state === "accepted") {
+        clearTimeout(call.graceTimer);
+        call.graceTimer = setTimeout(() => {
+          const stillGone =
+            !namespace.sockets.get(call.callerSocket) ||
+            !namespace.sockets.get(call.calleeSocket);
+          if (calls.get(call.id) === call && stillGone) finish(call, "disconnected");
+        }, 30000);
+        return;
+      }
+
+      finish(call, "disconnected");
+    });
+
+    // Retour après une coupure : on rattache ce téléphone à l'appel
+    socket.on("call:resume", ({ callId } = {}, ack) => {
+      const call = calls.get(callId);
+      const reply = typeof ack === "function" ? ack : () => {};
+      if (!call || call.state !== "accepted" || !participant(socket, call)) {
+        return reply({ ok: false });
+      }
+      if (user.id === call.from) call.callerSocket = socket.id;
+      else call.calleeSocket = socket.id;
+      clearTimeout(call.graceTimer);
+      reply({ ok: true, caller: user.id === call.from });
     });
   });
 
