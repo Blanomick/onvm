@@ -245,6 +245,7 @@ app.use('/api/conversations', conversationsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/voice-notes', voiceNotesRoutes(io));
 app.use('/api/groups', groupRoutes);
+app.use('/api/share', require('./routes/share'));
 app.use("/api/safety-reports", createSafetyReportsRouter(db));
 app.use('/api/ota', require('./routes/ota')); // Mises à jour OTA de l'appli Android
 app.use('/api/push', push.createRouter(callsApi)); // Notifications même appli fermée
