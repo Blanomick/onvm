@@ -167,7 +167,9 @@ async function sendWeb(sub, message) {
       'Content-Encoding': 'aes128gcm',
       'Content-Type': 'application/octet-stream',
       TTL: String(message.ttl || 86400),
-      Urgency: message.type === 'call' ? 'high' : 'normal',
+      // « high » : livré tout de suite même téléphone en veille
+      // (messages et appels). Le reste peut attendre le réveil.
+      Urgency: ['call', 'call-end', 'message'].includes(message.type) ? 'high' : 'normal',
       ...(message.tag ? { Topic: String(message.tag).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) } : {}),
     },
     body,
@@ -236,6 +238,11 @@ async function sendFcm(sub, message) {
   if (!firebase) return 'skipped';
 
   const isCall = message.type === 'call';
+
+  // Sur Android la sonnerie du téléphone dure plusieurs secondes :
+  // on la relance toutes les 8 s (au lieu de 4) pour ne pas la couper.
+  if (isCall && Number(message.ring) > 1 && Number(message.ring) % 2 === 0) return 'skipped';
+
   const data = Object.fromEntries(
     Object.entries(message).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])
   );
@@ -265,7 +272,9 @@ async function sendFcm(sub, message) {
               notification: {
                 title: message.title,
                 body: message.body,
-                channel_id: isCall ? 'onvm_calls' : 'onvm_messages',
+                // onvm_ring : canal créé par l'appli Android avec la sonnerie
+                // du téléphone, au volume de la sonnerie (comme un vrai appel)
+                channel_id: isCall ? 'onvm_ring' : 'onvm_messages',
                 tag: message.tag || undefined,
                 sound: 'default',
                 default_vibrate_timings: !isCall,
