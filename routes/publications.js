@@ -660,6 +660,8 @@ router.get('/', async (req, res) => {
       query.whereIn('publications.userId', [...followed, userId].filter(Boolean));
     }
     if (authorId) query.where('publications.userId', authorId);
+    // « Près de moi » : publications des membres d'une commune
+    if (req.query.commune) query.where('users.commune', String(req.query.commune));
     if (tag) query.where('publications.content', 'like', '%#%');
 
     // On regarde plus large pour pouvoir trier / filtrer

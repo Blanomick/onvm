@@ -261,7 +261,17 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: "Utilisateur introuvable." });
     }
 
-    res.status(200).json(user);
+    // Jamais de mot de passe ni de jeton dans la réponse
+    const {
+      password,
+      password_hash,
+      passwordHash,
+      reset_token,
+      resetToken,
+      reset_password_token,
+      ...publicUser
+    } = user;
+    res.status(200).json(publicUser);
   } catch (err) {
     console.error("[ERREUR] Erreur lors de la récupération de l'utilisateur :", err);
     res.status(500).json({ message: "Erreur lors de la récupération des données utilisateur." });
