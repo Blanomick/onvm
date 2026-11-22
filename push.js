@@ -359,6 +359,8 @@ function describe(row) {
       };
     case 'like_publication':
       return { title: 'ONVM', body: `${who} a aimé ta publication`, url: '/notifications' };
+    case 'mention':
+      return { title: 'ONVM', body: `${who} t'a mentionné(e) : ${snippet}`.slice(0, 160), url: '/notifications' };
     case 'comment_publication':
       return { title: 'ONVM', body: `${who} a commenté : ${snippet}`.slice(0, 160), url: '/notifications' };
     case 'retweet_publication':

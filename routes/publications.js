@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { extractTags, normalizeTag, notifyMentions } = require('../utils/discover');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -489,6 +490,8 @@ router.post(
         })
         .returning(['id']);
 
+      notifyMentions({ text: content, actorId: userId, publicationId: newPublication.id });
+
       res.status(201).json({ message: 'Publication ajoutée avec succès!', id: newPublication.id });
     } catch (err) {
       console.error('[ERREUR] Erreur lors de la création de la publication:', err);
@@ -510,11 +513,136 @@ router.post(
 
 // Récupération de toutes les publications avec utilisateur, photo de profil et leurs commentaires et réponses
 
+// Normalise media -> toujours un tableau [{url, kind}]
+function normalizeFeedMedia(publication) {
+  try {
+    if (publication.media == null) return [];
+    if (typeof publication.media === 'string') {
+      const s = publication.media.trim();
+      if (s.startsWith('[') || s.startsWith('{')) {
+        const parsed = JSON.parse(s);
+        return Array.isArray(parsed) ? parsed : parsed?.url ? [parsed] : [];
+      }
+      return s ? [{ url: s, kind: publication.mediatype || null }] : [];
+    }
+    return Array.isArray(publication.media)
+      ? publication.media
+      : publication.media?.url
+      ? [publication.media]
+      : [];
+  } catch {
+    return publication.media
+      ? [{ url: String(publication.media), kind: publication.mediatype || null }]
+      : [];
+  }
+}
+
+// Ajoute commentaires, réponses, likes… en 4 requêtes pour TOUT le fil
+// (avant : plusieurs requêtes par publication, très lent).
+async function hydratePublications(publications, userId) {
+  const ids = publications.map((p) => p.id);
+  if (!ids.length) return publications;
+
+  const [comments, likeRows, myLikes] = await Promise.all([
+    db('commentaires')
+      .select('commentaires.*', 'users.username', 'users.profilePicture')
+      .join('users', 'commentaires.userId', 'users.id')
+      .whereIn('commentaires.publicationId', ids)
+      .orderBy('commentaires.created_at', 'asc'),
+    db('likes')
+      .select('publicationId')
+      .count('* as n')
+      .whereIn('publicationId', ids)
+      .groupBy('publicationId'),
+    userId
+      ? db('likes').where({ userId }).whereIn('publicationId', ids).pluck('publicationId')
+      : Promise.resolve([]),
+  ]);
+
+  const commentIds = comments.map((c) => c.id);
+  const replies = commentIds.length
+    ? await db('replies')
+        .select('replies.*', 'users.username', 'users.profilePicture')
+        .join('users', 'replies.userId', 'users.id')
+        .whereIn('replies.commentId', commentIds)
+        .orderBy('replies.created_at', 'asc')
+    : [];
+
+  const repliesByComment = new Map();
+  for (const reply of replies) {
+    const list = repliesByComment.get(reply.commentId) || [];
+    list.push(reply);
+    repliesByComment.set(reply.commentId, list);
+  }
+  const commentsByPub = new Map();
+  for (const comment of comments) {
+    comment.replies = repliesByComment.get(comment.id) || [];
+    const list = commentsByPub.get(comment.publicationId) || [];
+    list.push(comment);
+    commentsByPub.set(comment.publicationId, list);
+  }
+  const likes = new Map(likeRows.map((row) => [Number(row.publicationId), Number(row.n)]));
+  const liked = new Set(myLikes.map(Number));
+
+  for (const publication of publications) {
+    publication.media = normalizeFeedMedia(publication);
+    publication.comments = commentsByPub.get(publication.id) || [];
+    publication.likeCount = likes.get(Number(publication.id)) || 0;
+    publication.userHasLiked = liked.has(Number(publication.id));
+  }
+  return publications;
+}
+
+// Score « Pour toi » : popularité récente + personnes suivies + fraîcheur
+function rankForYou(publications, { followed, userId }) {
+  const now = Date.now();
+  const scored = publications.map((p) => {
+    const ageHours = Math.max(0, (now - new Date(p.created_at).getTime()) / 3600000);
+    const engagement = 1 + p.likeCount * 2 + p.comments.length * 3;
+    let score = engagement / Math.pow(ageHours + 2, 1.35);
+    if (followed.has(Number(p.userId))) score *= 3;
+    if (String(p.userId) === String(userId)) score *= 0.6;
+    if (p.media.some((m) => /video/i.test(m.kind || '') || /\.(mp4|mov|webm)/i.test(m.url || ''))) {
+      score *= 1.25;
+    }
+    return { p, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+
+  // Variété : pas plus de 2 publications d'affilée du même auteur
+  const result = [];
+  const waiting = [];
+  for (const item of scored) {
+    const last = result.slice(-2);
+    if (last.length === 2 && last.every((x) => x.userId === item.p.userId)) waiting.push(item.p);
+    else result.push(item.p);
+    if (waiting.length && result[result.length - 1].userId !== waiting[0].userId) {
+      result.push(waiting.shift());
+    }
+  }
+  return result.concat(waiting);
+}
+
+// Fil d'actualité
+//   ?feed=recent (défaut) | foryou | following
+//   ?tag=football          → publications avec #football
+//   ?authorId=12           → publications d'une personne
+//   ?limit=100
 router.get('/', async (req, res) => {
-  const userId = req.query.userId; // ← pour savoir si l'utilisateur a liké
+  const userId = Number(req.query.userId) || userIdFromToken(req) || null;
+  const feed = ['foryou', 'following'].includes(req.query.feed) ? req.query.feed : 'recent';
+  const tag = req.query.tag ? normalizeTag(req.query.tag) : null;
+  const authorId = Number(req.query.authorId) || null;
+  const limit = Math.min(Math.max(Number(req.query.limit) || 150, 1), 300);
 
   try {
-    const publications = await db('publications')
+    let followed = new Set();
+    if (userId && feed !== 'recent') {
+      const ids = await db('follows').where({ followerId: userId }).pluck('followingId');
+      followed = new Set(ids.map(Number));
+    }
+
+    const query = db('publications')
       .select(
         'publications.id',
         'publications.userId',
@@ -528,58 +656,27 @@ router.get('/', async (req, res) => {
       .leftJoin('users', 'publications.userId', 'users.id')
       .orderBy('publications.created_at', 'desc');
 
-   for (const publication of publications) {
-  // 0) Normaliser media -> toujours un tableau [{url, kind}]
-  try {
-    if (publication.media == null) {
-      publication.media = [];
-    } else if (typeof publication.media === 'string') {
-      const s = publication.media.trim();
-      if (s.startsWith('[') || s.startsWith('{')) {
-        const parsed = JSON.parse(s);
-        publication.media = Array.isArray(parsed)
-          ? parsed
-          : (parsed?.url ? [parsed] : []);
-      } else {
-        // ancien format: URL simple
-        publication.media = [{ url: s, kind: publication.mediatype || null }];
-      }
+    if (feed === 'following') {
+      query.whereIn('publications.userId', [...followed, userId].filter(Boolean));
     }
-    // si c'est déjà un array via JSONB, on ne touche pas
-  } catch (e) {
-    console.warn('[WARN] media non JSON, fallback en string:', publication.media);
-    publication.media = publication.media
-      ? [{ url: String(publication.media), kind: publication.mediatype || null }]
-      : [];
-  }
+    if (authorId) query.where('publications.userId', authorId);
+    if (tag) query.where('publications.content', 'like', '%#%');
 
-  // 1) Ajouter les commentaires
-  publication.comments = await getCommentsForPublication(publication.id);
+    // On regarde plus large pour pouvoir trier / filtrer
+    query.limit(tag ? 3000 : feed === 'foryou' ? Math.max(limit * 3, 300) : limit);
 
-  // 2) Ajouter les réponses
-  for (let comment of publication.comments) {
-    comment.replies = await getRepliesForComment(comment.id);
-  }
+    let publications = await query;
+    if (tag) {
+      publications = publications
+        .filter((p) => extractTags(p.content).includes(tag))
+        .slice(0, limit);
+    }
 
-  // 3) Ajouter le nombre de likes
-  const totalLikes = await db('likes')
-    .where({ publicationId: publication.id })
-    .count()
-    .first();
-  publication.likeCount = parseInt(totalLikes.count);
+    await hydratePublications(publications, userId);
 
-  // 4) Vérifier si l'utilisateur a liké
-  if (userId) {
-    const userLike = await db('likes')
-      .where({ publicationId: publication.id, userId })
-      .first();
-    publication.userHasLiked = !!userLike;
-  } else {
-    publication.userHasLiked = false;
-  }
-}
-
-
+    if (feed === 'foryou') {
+      publications = rankForYou(publications, { followed, userId }).slice(0, limit);
+    }
 
     res.status(200).json(publications);
   } catch (err) {
@@ -587,9 +684,6 @@ router.get('/', async (req, res) => {
     res.status(500).json({ message: 'Erreur lors de la récupération des publications.' });
   }
 });
-
-
-
 
 // Fonction pour récupérer les commentaires d'une publication
 
@@ -876,6 +970,13 @@ metadata: {
     .ignore();
 }
 
+
+      notifyMentions({
+        text: comment,
+        actorId: Number(userId),
+        publicationId: Number(publicationId),
+        commentId: newComment.id,
+      });
 
       res.status(201).json({ message: 'Commentaire ajouté + notification envoyée!', id: newComment.id });
     } catch (err) {

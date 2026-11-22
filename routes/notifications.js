@@ -54,14 +54,18 @@ const db = require("../db");
           "like_publication",
           "comment_publication",
           "retweet_publication",
+          "mention",
         ].includes(n.type)
       ) {
         const publicationId =
           metadata.publication_id ||
           (n.entity_type === "publication" ? n.entity_id : null);
 
+        // Mention : on ouvre directement la publication (lien unique)
         target = publicationId
-          ? `/publication?post=${publicationId}`
+          ? n.type === "mention"
+            ? `/p/${require("./share").linkFor("p", publicationId).code}`
+            : `/publication?post=${publicationId}`
           : "/publication";
       } else if (
         ["like_story", "comment_story"].includes(n.type)
