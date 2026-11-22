@@ -3,6 +3,17 @@ module.exports = function attachWebRTCSockets(io) {
   io.on("connection", (socket) => {
     // Rejoindre/Quittter une room de chat
     socket.on("chat:join", ({ chatId }) => socket.join(`chat:${chatId}`));
+
+    // « … est en train d'écrire » : relayé aux autres membres de la discussion
+    socket.on("chat:typing", ({ chatId, userId, username, typing } = {}) => {
+      if (!chatId || !userId) return;
+      socket.to(`chat:${chatId}`).emit("chat:typing", {
+        chatId: String(chatId),
+        userId: Number(userId),
+        username: String(username || "").slice(0, 60),
+        typing: Boolean(typing),
+      });
+    });
     socket.on("chat:leave", ({ chatId }) => socket.leave(`chat:${chatId}`));
 
     // Messages temps réel (texte / media / notes vocales)

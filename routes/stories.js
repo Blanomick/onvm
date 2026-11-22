@@ -207,13 +207,62 @@ router.get('/:storyId/comments', async (req, res) => {
 
 
 
-// Pour les vues d’une story
+// Table des vues (créée au besoin)
+let viewsReady = null;
+function ensureViewsTable() {
+  if (!viewsReady) {
+    viewsReady = (async () => {
+      if (!(await db.schema.hasTable('story_views'))) {
+        await db.schema.createTable('story_views', (table) => {
+          table.increments('id').primary();
+          table.integer('story_id').notNullable().index();
+          table.integer('user_id').notNullable();
+          table.timestamp('created_at').defaultTo(db.fn.now());
+          table.unique(['story_id', 'user_id']);
+        });
+      }
+    })().catch((error) => {
+      viewsReady = null;
+      throw error;
+    });
+  }
+  return viewsReady;
+}
+
+// Enregistre « X a vu ta story » (une seule fois par personne)
+router.post('/:storyId/view', async (req, res) => {
+  const storyId = Number(req.params.storyId);
+  const userId = Number(req.body?.userId);
+  if (!storyId || !userId) return res.status(400).json({ error: 'Données manquantes' });
+  try {
+    await ensureViewsTable();
+    const story = await db('stories').select('userId').where({ id: storyId }).first();
+    if (!story) return res.status(404).json({ error: 'Story introuvable' });
+    if (Number(story.userId) !== userId) {
+      const exists = await db('story_views').where({ story_id: storyId, user_id: userId }).first();
+      if (!exists) await db('story_views').insert({ story_id: storyId, user_id: userId });
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('[STORIES] Vue :', error.message);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Qui a vu la story (du plus récent au plus ancien)
 router.get('/:storyId/views', async (req, res) => {
-  const views = await db('story_views')
-    .leftJoin('users', 'story_views.user_id', 'users.id')
-    .where({ story_id: req.params.storyId })
-    .select('users.id', 'users.username', 'users.profilePicture');
-  res.json(views);
+  try {
+    await ensureViewsTable();
+    const views = await db('story_views')
+      .leftJoin('users', 'story_views.user_id', 'users.id')
+      .where({ story_id: req.params.storyId })
+      .select('users.id', 'users.username', 'users.profilePicture', 'story_views.created_at')
+      .orderBy('story_views.created_at', 'desc');
+    res.json(views);
+  } catch (error) {
+    console.error('[STORIES] Vues :', error.message);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 // Pour les likes d’une story
