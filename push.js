@@ -361,6 +361,13 @@ function describe(row) {
       return { title: 'ONVM', body: `${who} a aimé ta publication`, url: '/notifications' };
     case 'mention':
       return { title: 'ONVM', body: `${who} t'a mentionné(e) : ${snippet}`.slice(0, 160), url: '/notifications' };
+    case 'live':
+      return {
+        title: `🔴 ${who} est en direct`,
+        body: snippet || 'Rejoins le live maintenant !',
+        url: meta.live_id ? `/lives/${meta.live_id}` : '/lives',
+        tag: `live-${row.actor_id}`,
+      };
     case 'comment_publication':
       return { title: 'ONVM', body: `${who} a commenté : ${snippet}`.slice(0, 160), url: '/notifications' };
     case 'retweet_publication':

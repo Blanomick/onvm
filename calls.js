@@ -478,6 +478,7 @@ module.exports = function installCalls(io, db, push) {
   });
 
   return {
+    iceServers,
     decline(callId, userId) {
       const call = calls.get(callId);
       if (call && call.state === "ringing" && call.to === userId) {

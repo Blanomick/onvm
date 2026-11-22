@@ -193,6 +193,7 @@ const io = new Server(server, {
 
 const push = require("./push");
 const callsApi = require("./calls")(io, db, push);
+require("./lives")(io, db, callsApi.iceServers);
 const installMessaging = require("./messaging");
 
 // Export `io` pour utilisation dans d'autres fichiers

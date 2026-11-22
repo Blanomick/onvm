@@ -73,6 +73,10 @@ const db = require("../db");
         target = n.entity_id ? `/story/${n.entity_id}` : "/publication";
       }
 
+      if (n.type === "live") {
+        target = metadata.live_id ? `/lives/${metadata.live_id}` : "/lives";
+      }
+
       return { ...n, target };
     });
 
